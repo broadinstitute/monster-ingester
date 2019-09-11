@@ -38,6 +38,7 @@ inThisBuild(
 
 // Compiler plugins.
 val betterMonadicForVersion = "0.3.1"
+val gcsLibVersion = "0.1.0"
 
 // Data types & control flow.
 val catsVersion = "1.6.0"
@@ -79,6 +80,10 @@ val commonSettings = Seq(
       "-Ywarn-unused-import"
     )
   ),
+  resolvers ++= Seq(
+    "Broad Artifactory Releases" at "https://broadinstitute.jfrog.io/broadinstitute/libs-release/",
+    "Broad Artifactory Snapshots" at "https://broadinstitute.jfrog.io/broadinstitute/libs-snapshot/"
+  ),
   Compile / doc / scalacOptions += "-no-link-warnings",
   Test / fork := true,
   IntegrationTest / fork := true
@@ -86,5 +91,20 @@ val commonSettings = Seq(
 
 lazy val `monster-ingester` = project
   .in(file("."))
-  .settings(publish / skip := true)
+  .aggregate(jadeclient)
 
+lazy val `jadeclient` = project
+  .in(file("jade_client"))
+  .configs(IntegrationTest)
+  .enablePlugins(BuildInfoPlugin)
+  .settings(commonSettings)
+  .settings(libraryDependencies ++= Seq(
+    "io.circe" %% "circe-core" % circeVersion,
+    "io.circe" %% "circe-derivation" % circeDerivationVersion,
+    "io.circe" %% "circe-parser" % circeVersion,
+    "org.http4s" %% "http4s-circe" % http4sVersion,
+    "org.http4s" %% "http4s-blaze-client" % http4sVersion,
+    "org.http4s" %% "http4s-circe" % http4sVersion,
+    "org.http4s" %% "http4s-dsl" % http4sVersion,
+    "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion
+  ))
