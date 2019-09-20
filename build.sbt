@@ -49,6 +49,7 @@ val fs2Version = "1.0.5"
 // JSON.
 val circeVersion = "0.11.1"
 val circeDerivationVersion = "0.11.0-M3"
+val enumeratumCirceVersion = "1.5.21"
 
 // Logging.
 val logbackVersion = "1.2.3"
@@ -99,9 +100,12 @@ lazy val `jadeclient` = project
   .enablePlugins(BuildInfoPlugin)
   .settings(commonSettings)
   .settings(libraryDependencies ++= Seq(
+    "com.beachape" %% "enumeratum" % enumeratumVersion,
+    "com.beachape" %% "enumeratum-circe" % enumeratumCirceVersion,
     "io.circe" %% "circe-core" % circeVersion,
     "io.circe" %% "circe-derivation" % circeDerivationVersion,
     "io.circe" %% "circe-parser" % circeVersion,
+    "io.circe" %% "circe-literal" % circeVersion,
     "org.http4s" %% "http4s-circe" % http4sVersion,
     "org.http4s" %% "http4s-blaze-client" % http4sVersion,
     "org.http4s" %% "http4s-circe" % http4sVersion,
