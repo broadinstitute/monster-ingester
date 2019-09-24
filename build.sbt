@@ -99,16 +99,23 @@ lazy val `jadeclient` = project
   .configs(IntegrationTest)
   .enablePlugins(BuildInfoPlugin)
   .settings(commonSettings)
-  .settings(libraryDependencies ++= Seq(
-    "com.beachape" %% "enumeratum" % enumeratumVersion,
-    "com.beachape" %% "enumeratum-circe" % enumeratumCirceVersion,
-    "io.circe" %% "circe-core" % circeVersion,
-    "io.circe" %% "circe-derivation" % circeDerivationVersion,
-    "io.circe" %% "circe-parser" % circeVersion,
-    "io.circe" %% "circe-literal" % circeVersion,
-    "org.http4s" %% "http4s-circe" % http4sVersion,
-    "org.http4s" %% "http4s-blaze-client" % http4sVersion,
-    "org.http4s" %% "http4s-circe" % http4sVersion,
-    "org.http4s" %% "http4s-dsl" % http4sVersion,
-    "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion
-  ))
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.beachape" %% "enumeratum" % enumeratumVersion,
+      "com.beachape" %% "enumeratum-circe" % enumeratumCirceVersion,
+      "io.circe" %% "circe-core" % circeVersion,
+      "io.circe" %% "circe-derivation" % circeDerivationVersion,
+      "io.circe" %% "circe-parser" % circeVersion,
+      "io.circe" %% "circe-literal" % circeVersion,
+      "org.http4s" %% "http4s-circe" % http4sVersion,
+      "org.http4s" %% "http4s-blaze-client" % http4sVersion,
+      "org.http4s" %% "http4s-circe" % http4sVersion,
+      "org.http4s" %% "http4s-dsl" % http4sVersion,
+      "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion
+    ),
+    libraryDependencies ++= Seq(
+      "io.circe" %% "circe-literal" % circeVersion,
+      "org.scalamock" %% "scalamock" % scalaMockVersion,
+      "org.scalatest" %% "scalatest" % scalaTestVersion,
+    ).map(_ % Test)
+  )

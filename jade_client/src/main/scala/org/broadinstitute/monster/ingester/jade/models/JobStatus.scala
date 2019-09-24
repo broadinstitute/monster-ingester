@@ -8,9 +8,7 @@ import scala.collection.immutable.IndexedSeq
 /** Possible job status responses from the Jade Data Repo API for ingest requests. */
 sealed trait JobStatus extends EnumEntry with Product with Serializable with Lowercase
 
-object JobStatus
-  extends Enum[JobStatus]
-    with CirceEnum[JobStatus] {
+object JobStatus extends Enum[JobStatus] with CirceEnum[JobStatus] {
 
   override val values: IndexedSeq[JobStatus] = findValues
 

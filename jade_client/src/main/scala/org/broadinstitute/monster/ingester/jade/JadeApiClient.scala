@@ -5,7 +5,12 @@ import java.nio.file.Path
 import cats.effect.{Clock, ContextShift, IO, Resource}
 import io.circe.jawn.JawnParser
 import org.broadinstitute.monster.ingester.jade.models.ApiError.JadeError
-import org.broadinstitute.monster.ingester.jade.models.{ApiErrorBody, IngestRequest, JadeStatus, JobInfo}
+import org.broadinstitute.monster.ingester.jade.models.{
+  ApiErrorBody,
+  IngestRequest,
+  JadeStatus,
+  JobInfo
+}
 import org.broadinstitute.monster.storage.gcs.GcsAuthProvider
 import org.http4s._
 import org.http4s.circe.CirceEntityDecoder._
@@ -13,21 +18,22 @@ import org.http4s.circe.CirceEntityEncoder._
 import org.http4s.client._
 
 /**
- * Client which can interact with Jade's Data Repository API.
- *
- * @param runHttp function which can transform HTTP requests into HTTP responses
- *                (bracketed by connection-management code).
- *
- * @see https://datarepo.terra.bio/swagger-ui.html#/ for Swagger and documentation of API.
- */
+  * Client which can interact with Jade's Data Repository API.
+  *
+  * @param runHttp function which can transform HTTP requests into HTTP responses
+  *                (bracketed by connection-management code).
+  *
+  * @see https://datarepo.terra.bio/swagger-ui.html#/ for Swagger and documentation of API.
+  */
 private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
     extends JadeApi {
   import JadeApiClient._
 
   override def ingest(datasetId: String, data: IngestRequest): IO[JobInfo] = {
-    runHttp(Request[IO](
-      method = Method.POST,
-      JadeApiIngestEndpoint / s"$datasetId" / "ingest").withEntity(data)).use { response =>
+    runHttp(
+      Request[IO](method = Method.POST, JadeApiIngestEndpoint / s"$datasetId" / "ingest")
+        .withEntity(data)
+    ).use { response =>
       if (response.status.isSuccess) {
         response.as[JobInfo]
       } else {
@@ -37,18 +43,20 @@ private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
   }
 
   override def jobStatus(jobId: String): IO[JobInfo] = {
-    runHttp(Request[IO](method = Method.GET, uri = JadeApiJobStatusEndpoint / jobId)).use { response =>
-      if (response.status.isSuccess) {
-        response.as[JobInfo]
-      } else {
-        handleResponseError(response)
-      }
+    runHttp(Request[IO](method = Method.GET, uri = JadeApiJobStatusEndpoint / jobId)).use {
+      response =>
+        if (response.status.isSuccess) {
+          response.as[JobInfo]
+        } else {
+          handleResponseError(response)
+        }
     }
   }
 
   override def apiStatus: IO[JadeStatus] = {
-    runHttp(Request[IO](method = Method.GET, uri = JadeApiStatusEndpoint)).use { response =>
-      IO.pure(JadeStatus(ok = response.status.isSuccess, response.status))
+    runHttp(Request[IO](method = Method.GET, uri = JadeApiStatusEndpoint)).use {
+      response =>
+        IO.pure(JadeStatus(ok = response.status.isSuccess, response.status.code))
     }
   }
 
@@ -56,14 +64,16 @@ private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
   private val parser = new JawnParser
 
   /**
-   * Method to handle Jade API error responses.
-   *
-   * @param response The http4s response from the API
-   */
+    * Method to handle Jade API error responses.
+    *
+    * @param response The http4s response from the API
+    */
   private def handleResponseError(response: Response[IO]): IO[Nothing] = {
-    response.body.compile.toChunk.flatMap {chunk =>
+    response.body.compile.toChunk.flatMap { chunk =>
       val parsed = parser.decodeByteBuffer[ApiErrorBody](chunk.toByteBuffer)
-      IO.raiseError(JadeError(response.status, parsed.left.map { _ => new String(chunk.toArray[Byte])}))
+      IO.raiseError(JadeError(response.status.code, parsed.left.map { _ =>
+        new String(chunk.toArray[Byte])
+      }))
     }
   }
 }
@@ -72,13 +82,13 @@ object JadeApiClient {
 
   private[this] val JadeBaseUri: Uri = uri"https://datarepo.terra.bio"
 
-  private val JadeApiStatusEndpoint = JadeBaseUri / "status"
+  private[jade] val JadeApiStatusEndpoint = JadeBaseUri / "status"
 
   private val JadeApiRepoBaseUri = JadeBaseUri / "api" / "repository" / "v1"
 
-  private val JadeApiJobStatusEndpoint = JadeApiRepoBaseUri / "jobs"
+  private[jade] val JadeApiJobStatusEndpoint = JadeApiRepoBaseUri / "jobs"
 
-  private val JadeApiIngestEndpoint = JadeApiRepoBaseUri / "datasets"
+  private[jade] val JadeApiIngestEndpoint = JadeApiRepoBaseUri / "datasets"
 
   def build(
     httpClient: Client[IO],
