@@ -1,5 +1,7 @@
 package org.broadinstitute.monster.ingester.jade
 
+import java.util.UUID
+
 import cats.effect.{ContextShift, IO, Resource}
 import io.circe.jawn.JawnParser
 import org.broadinstitute.monster.ingester.jade.models.ApiError.JadeError
@@ -27,10 +29,12 @@ private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
     extends JadeApi {
   import JadeApiClient._
 
-  override def ingest(datasetId: String, data: IngestRequest): IO[JobInfo] = {
+  override def ingest(datasetId: UUID, data: IngestRequest): IO[JobInfo] = {
     runHttp(
-      Request[IO](method = Method.POST, JadeApiIngestEndpoint / s"$datasetId" / "ingest")
-        .withEntity(data)
+      Request[IO](
+        method = Method.POST,
+        JadeApiIngestEndpoint / datasetId.toString / "ingest"
+      ).withEntity(data)
     ).use { response =>
       if (response.status.isSuccess) {
         response.as[JobInfo]
@@ -40,14 +44,15 @@ private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
     }
   }
 
-  override def jobStatus(jobId: String): IO[JobInfo] = {
-    runHttp(Request[IO](method = Method.GET, uri = JadeApiJobStatusEndpoint / jobId)).use {
-      response =>
-        if (response.status.isSuccess) {
-          response.as[JobInfo]
-        } else {
-          handleResponseError(response)
-        }
+  override def jobStatus(jobId: UUID): IO[JobInfo] = {
+    runHttp(
+      Request[IO](method = Method.GET, uri = JadeApiJobStatusEndpoint / jobId.toString)
+    ).use { response =>
+      if (response.status.isSuccess) {
+        response.as[JobInfo]
+      } else {
+        handleResponseError(response)
+      }
     }
   }
 

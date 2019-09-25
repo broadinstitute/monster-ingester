@@ -2,14 +2,15 @@ package org.broadinstitute.monster.ingester.jade
 
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 import cats.effect.{IO, Resource}
 import fs2.Stream
 import io.circe.Json
 import org.broadinstitute.monster.ingester.jade.JadeApiClient.{
-  JadeApiStatusEndpoint,
+  JadeApiIngestEndpoint,
   JadeApiJobStatusEndpoint,
-  JadeApiIngestEndpoint
+  JadeApiStatusEndpoint
 }
 import org.broadinstitute.monster.ingester.jade.models.ApiError.JadeError
 import org.broadinstitute.monster.ingester.jade.models.JobStatus.Running
@@ -26,8 +27,8 @@ import org.scalatest.{FlatSpec, Matchers}
 class JadeApiClientSpec extends FlatSpec with Matchers {
   // So we likely want a simple mock of the Jade API or something like that. Gonna try to piggyback off the GCS stuff
 
-  private val datasetId = "datasetid"
-  private val jobId = "jobid"
+  private val datasetId = UUID.randomUUID()
+  private val jobId = UUID.randomUUID()
   private val datasetData = IngestRequest("path", "table")
 
   private def buildApi(run: Request[IO] => Resource[IO, Response[IO]]): JadeApiClient =
@@ -42,7 +43,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
     val api = buildApi { req =>
       req.method shouldBe Method.POST
 
-      req.uri shouldBe JadeApiIngestEndpoint / datasetId / "ingest"
+      req.uri shouldBe JadeApiIngestEndpoint / datasetId.toString / "ingest"
 
       val expectedBody = Json.obj(
         "path" -> Json.fromString("path"),
@@ -95,7 +96,8 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
         )
       )
     }
-    val actualNotFound = api.ingest("blah", datasetData).attempt.unsafeRunSync()
+    val actualNotFound =
+      api.ingest(UUID.randomUUID(), datasetData).attempt.unsafeRunSync()
     val errorResponse = actualNotFound.fold(_.leftSideValue, _.leftSideValue)
     val expectedUnauthorized = JadeError(404, Left(""))
     errorResponse shouldBe expectedUnauthorized
@@ -117,7 +119,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
       )
     }
     val actualBadRequest =
-      api.ingest("blah", IngestRequest("herp", "derp")).attempt.unsafeRunSync()
+      api.ingest(UUID.randomUUID(), IngestRequest("herp", "derp")).attempt.unsafeRunSync()
     val errorResponse = actualBadRequest.fold(blah => blah, gah => gah)
     val expectedBadRequest =
       JadeError(400, Right(ApiErrorBody(List("detail1", "detail2"), "message1")))
@@ -131,7 +133,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
     val api = buildApi { req =>
       req.method shouldBe Method.GET
 
-      req.uri shouldBe JadeApiJobStatusEndpoint / jobId
+      req.uri shouldBe JadeApiJobStatusEndpoint / jobId.toString
 
       Resource.liftF(
         IO.pure(
@@ -150,10 +152,11 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
   }
 
   it should "return a properly formatted JadeError when a status request results in an error without a response body" in {
+    val badId = UUID.randomUUID()
     val api = buildApi { req =>
       req.method shouldBe Method.GET
 
-      req.uri shouldBe JadeApiJobStatusEndpoint / "notarealID"
+      req.uri shouldBe JadeApiJobStatusEndpoint / badId.toString
 
       Resource.liftF(
         IO.pure(
@@ -164,17 +167,19 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
         )
       )
     }
-    val actualNotFound = api.jobStatus("notarealID").attempt.unsafeRunSync()
+    val actualNotFound = api.jobStatus(badId).attempt.unsafeRunSync()
     val errorResponse = actualNotFound.fold(_.leftSideValue, _.leftSideValue)
     val expectedUnauthorized = JadeError(404, Left(""))
     errorResponse shouldBe expectedUnauthorized
   }
 
   it should "return a properly formatted JadeError when a status request results in an error with a response body" in {
+    val badId = UUID.randomUUID()
+
     val api = buildApi { req =>
       req.method shouldBe Method.GET
 
-      req.uri shouldBe JadeApiJobStatusEndpoint / "somehowmalformed"
+      req.uri shouldBe JadeApiJobStatusEndpoint / badId.toString
 
       Resource.liftF(
         IO.pure(
@@ -188,7 +193,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
       )
     }
     val actualBadRequest =
-      api.jobStatus("somehowmalformed").attempt.unsafeRunSync()
+      api.jobStatus(badId).attempt.unsafeRunSync()
     val errorResponse = actualBadRequest.fold(blah => blah, gah => gah)
     val expectedBadRequest =
       JadeError(400, Right(ApiErrorBody(List("detail1", "detail2"), "message1")))

@@ -1,6 +1,7 @@
 package org.broadinstitute.monster.ingester.jade.models
 
 import java.time.OffsetDateTime
+import java.util.UUID
 
 import io.circe.derivation.{deriveDecoder, deriveEncoder}
 import io.circe.{Decoder, Encoder}
@@ -15,7 +16,7 @@ import io.circe.{Decoder, Encoder}
   * @param submitted The datetime of when the job is submitted (will only exist once the job is submitted).
   */
 case class JobInfo(
-  id: String,
+  id: UUID,
   jobStatus: JobStatus,
   completed: Option[OffsetDateTime] = None,
   submitted: Option[OffsetDateTime] = None

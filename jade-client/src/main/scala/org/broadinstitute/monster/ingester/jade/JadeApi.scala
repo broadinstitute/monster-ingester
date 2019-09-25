@@ -1,5 +1,7 @@
 package org.broadinstitute.monster.ingester.jade
 
+import java.util.UUID
+
 import cats.effect.IO
 import org.broadinstitute.monster.ingester.jade.models.{
   IngestRequest,
@@ -22,7 +24,7 @@ trait JadeApi {
     *
     * @see https://datarepo.terra.bio/swagger-ui.html#/repository/ingestDataset for endpoint documentation.
     */
-  def ingest(datasetId: String, data: IngestRequest): IO[JobInfo]
+  def ingest(datasetId: UUID, data: IngestRequest): IO[JobInfo]
 
   /**
     * Method to hit the Jade Data Repository's job status endpoint.
@@ -33,7 +35,7 @@ trait JadeApi {
     *
     * @see https://datarepo.terra.bio/swagger-ui.html#/repository/retrieveJob for endpoint documentation.
     */
-  def jobStatus(jobId: String): IO[JobInfo]
+  def jobStatus(jobId: UUID): IO[JobInfo]
 
   /**
     * Simple status check of the Jade API.
