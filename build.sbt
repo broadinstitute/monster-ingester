@@ -41,10 +41,10 @@ val commonSettings = Seq(
 
 lazy val `monster-ingester` = project
   .in(file("."))
-  .aggregate(jadeclient)
+  .aggregate(`jade-client`)
 
-lazy val `jadeclient` = project
-  .in(file("jade_client"))
+lazy val `jade-client` = project
+  .in(file("jade-client"))
   .enablePlugins(BasePlugin)
   .settings(commonSettings)
   .settings(

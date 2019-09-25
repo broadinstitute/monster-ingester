@@ -9,7 +9,7 @@ import org.broadinstitute.monster.ingester.jade.models.{
 
 /** Client which can interact with Jade's Data Repository API.
   * @see https://datarepo.terra.bio/swagger-ui.html#/ for Swagger and documentation of API.
-  * */
+  */
 trait JadeApi {
 
   /**

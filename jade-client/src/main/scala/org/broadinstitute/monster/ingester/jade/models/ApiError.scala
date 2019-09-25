@@ -18,8 +18,8 @@ object ApiError {
       extends Exception {
     override def getMessage: String = {
       val theBody =
-        body.fold(theString => theString, apiErrorBody => apiErrorBody.toString)
-      s"Status: $status, body: $theBody"
+        body.fold(identity, _.asJson.spaces2)
+      s"Jade Repo returned an error. Status: $status, body: $theBody"
     }
   }
 

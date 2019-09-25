@@ -51,9 +51,9 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
         "max_bad_records" -> Json.fromInt(0)
       )
 
-      val actualBody = req.as[Json].unsafeRunSync()
-
-      actualBody shouldBe expectedBody
+      Resource.liftF(req.as[Json]).map { actualBody =>
+        actualBody shouldBe expectedBody
+      }
 
       Resource.liftF(
         IO.pure(
@@ -82,17 +82,15 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
         "max_bad_records" -> Json.fromInt(0)
       )
 
-      val actualBody = req.as[Json].unsafeRunSync()
-
-      actualBody shouldBe expectedBody
+      Resource.liftF(req.as[Json]).map { actualBody =>
+        actualBody shouldBe expectedBody
+      }
 
       Resource.liftF(
         IO.pure(
           Response[IO](
             status = Status.NotFound,
-            body = Stream.emits(
-              s"""""".getBytes
-            )
+            body = Stream.empty
           )
         )
       )
@@ -112,7 +110,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
           Response[IO](
             status = Status.BadRequest,
             body = Stream.emits(
-              s"""{ "errorDetail": ["detail1", "detail2"], "message": "message1" }""".getBytes
+              """{ "errorDetail": ["detail1", "detail2"], "message": "message1" }""".getBytes
             )
           )
         )
@@ -161,9 +159,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
         IO.pure(
           Response[IO](
             status = Status.NotFound,
-            body = Stream.emits(
-              s"""""".getBytes
-            )
+            body = Stream.empty
           )
         )
       )
@@ -185,7 +181,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
           Response[IO](
             status = Status.BadRequest,
             body = Stream.emits(
-              s"""{ "errorDetail": ["detail1", "detail2"], "message": "message1" }""".getBytes
+              """{ "errorDetail": ["detail1", "detail2"], "message": "message1" }""".getBytes
             )
           )
         )
@@ -205,10 +201,8 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
       req.method shouldBe Method.GET
       req.uri shouldBe JadeApiStatusEndpoint
 
-      Resource.liftF(
-        IO.pure(
-          Response[IO](status = Status.Ok)
-        )
+      Resource.pure(
+        Response[IO](status = Status.Ok)
       )
     }
 

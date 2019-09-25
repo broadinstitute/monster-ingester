@@ -1,8 +1,6 @@
 package org.broadinstitute.monster.ingester.jade
 
-import java.nio.file.Path
-
-import cats.effect.{Clock, ContextShift, IO, Resource}
+import cats.effect.{ContextShift, IO, Resource}
 import io.circe.jawn.JawnParser
 import org.broadinstitute.monster.ingester.jade.models.ApiError.JadeError
 import org.broadinstitute.monster.ingester.jade.models.{
@@ -92,24 +90,22 @@ object JadeApiClient {
 
   def build(
     httpClient: Client[IO],
-    serviceAccountJson: Option[Path]
-  )(implicit cs: ContextShift[IO], clk: Clock[IO]): IO[JadeApi] =
-    GcsAuthProvider.build(serviceAccountJson).map { auth =>
-      /*
-       * NOTE: Injecting the call to `.addAuth` here instead of in the class body
-       * has the following trade-off:
-       *
-       *   1. It prevents the auth-adding logic from being covered by unit tests, BUT
-       *   2. It makes it impossible for the business logic in the class body to
-       *      "forget" to add auth, so as long as we get the logic correct here we
-       *      can be confident that HTTP calls in the client won't fail from that
-       *      particular bug
-       *
-       * 2. is a huge win for code cleanliness and long-term maintenance. Our integration
-       * tests will thoroughly cover this builder method, so 1. isn't that big of a problem.
-       */
-      new JadeApiClient(
-        req => Resource.liftF(auth.addAuth(req)).flatMap(httpClient.run)
-      )
-    }
+    gcsAuthProvider: GcsAuthProvider
+  )(implicit cs: ContextShift[IO]): JadeApi =
+    /*
+     * NOTE: Injecting the call to `.addAuth` here instead of in the class body
+     * has the following trade-off:
+     *
+     *   1. It prevents the auth-adding logic from being covered by unit tests, BUT
+     *   2. It makes it impossible for the business logic in the class body to
+     *      "forget" to add auth, so as long as we get the logic correct here we
+     *      can be confident that HTTP calls in the client won't fail from that
+     *      particular bug
+     *
+     * 2. is a huge win for code cleanliness and long-term maintenance. Our integration
+     * tests will thoroughly cover this builder method, so 1. isn't that big of a problem.
+     */
+    new JadeApiClient(
+      req => Resource.liftF(gcsAuthProvider.addAuth(req)).flatMap(httpClient.run)
+    )
 }
