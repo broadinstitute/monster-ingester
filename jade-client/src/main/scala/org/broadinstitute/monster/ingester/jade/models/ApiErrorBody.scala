@@ -10,7 +10,7 @@ import io.circe.{Decoder, Encoder}
   * @param errorDetail A list of error details from the Jade API.
   * @param message A specific error message for the particular type of error.
   */
-case class ApiErrorBody(errorDetail: List[String], message: String)
+case class ApiErrorBody(errorDetail: Option[List[String]], message: String)
 
 object ApiErrorBody {
   implicit val decoder: Decoder[ApiErrorBody] = deriveDecoder

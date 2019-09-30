@@ -25,7 +25,7 @@ import org.http4s.client._
   *
   * @see https://datarepo.terra.bio/swagger-ui.html#/ for Swagger and documentation of API.
   */
-private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
+class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
     extends JadeApi {
   import JadeApiClient._
 

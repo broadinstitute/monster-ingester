@@ -7,6 +7,10 @@ val catsEffectVersion = "1.2.0"
 val enumeratumVersion = "1.5.13"
 val fs2Version = "1.0.5"
 
+// DB.
+val doobieVersion = "0.7.0"
+val postgresqlDriverVersion = "42.2.5"
+
 // JSON.
 val circeVersion = "0.11.1"
 val circeDerivationVersion = "0.11.0-M3"
@@ -41,7 +45,7 @@ val commonSettings = Seq(
 
 lazy val `monster-ingester` = project
   .in(file("."))
-  .aggregate(`jade-client`)
+  .aggregate(`jade-client`, `core`)
 
 lazy val `jade-client` = project
   .in(file("jade-client"))
@@ -66,4 +70,30 @@ lazy val `jade-client` = project
       "org.scalamock" %% "scalamock" % scalaMockVersion,
       "org.scalatest" %% "scalatest" % scalaTestVersion,
     ).map(_ % Test)
+  )
+
+lazy val `core` = project
+  .in(file("core"))
+  .enablePlugins(BasePlugin)
+  .dependsOn(`jade-client`)
+  .settings(commonSettings)
+  .settings(
+    libraryDependencies ++= Seq(
+      "io.circe" %% "circe-core" % circeVersion,
+      "io.circe" %% "circe-derivation" % circeDerivationVersion,
+      "io.circe" %% "circe-parser" % circeVersion,
+      "io.circe" %% "circe-literal" % circeVersion,
+      "org.http4s" %% "http4s-circe" % http4sVersion,
+      "org.http4s" %% "http4s-blaze-client" % http4sVersion,
+      "org.http4s" %% "http4s-circe" % http4sVersion,
+      "org.http4s" %% "http4s-dsl" % http4sVersion,
+      "org.tpolecat" %% "doobie-core" % doobieVersion,
+      "org.tpolecat" %% "doobie-hikari" % doobieVersion,
+      "org.tpolecat" %% "doobie-postgres" % doobieVersion,
+      "org.tpolecat" %% "doobie-postgres-circe" % doobieVersion,
+
+    ),
+    dependencyOverrides := Seq(
+      "org.postgresql" % "postgresql" % postgresqlDriverVersion
+    )
   )
