@@ -8,6 +8,8 @@ import cats.implicits._
 import doobie._
 import doobie.util.transactor.Transactor
 import doobie.implicits._
+import io.circe.{Decoder, Encoder}
+import io.circe.derivation.{deriveDecoder, deriveEncoder}
 import org.broadinstitute.monster.ingester.core.ApiError.NotFound
 import org.broadinstitute.monster.ingester.core.IngestController.JobSubmission
 import org.broadinstitute.monster.ingester.core.models.{IngestData, JobData, JobSummary, RequestSummary}
@@ -68,13 +70,13 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
    * @param requestId the Id of the request under which to create jobs.
    * @return the number of jobs added to the jobs table.
    */
-  private def createJobs(ingestData: IngestData, requestId: UUID): IO[Int] = {
+  private def initJobs(ingestData: IngestData, requestId: UUID): IO[Int] = {
     checkAndExec(requestId) { rId =>
       // generate UUID for each subrequest in a request
       val jobs = ingestData.tables.map {
         case JobData(prefix, tableName) =>
           (
-            UUID.randomUUID(), // TODO its not a uuid, we want a sequential iterated Long integer
+            UUID.randomUUID(), // TODO its not a uuid, we want a sequential iterated Long integer?
             rId,
             JobStatus.Pending: JobStatus,
             prefix,
@@ -112,19 +114,19 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
         .to[List]
 
       // submit (max number of jobs - number of jobs running) to Jade API
-      newIds <- Async[ConnectionIO].liftIO(
+      newIds <- Async[ConnectionIO].liftIO( // TODO this is List[JobInfo] which is almost right, need it to include our ID too
         jobsToSubmit.traverse { job =>
           jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.table))
         }
       )
 
       // update the JobsTable; update the requests that have moved from pending to running
-      numUpdated <- Update[JobInfo](
+      numUpdated <- Update[JobInfo]( // TODO update type from JobInfo
         List(
           Fragment.const(s"UPDATE $JobsTable"),
           fr"SET status = t.status, jade_id = t.jade_id, updated =" ++ Fragment
             .const(timestampSql(now)),
-          fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)",
+          fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)", // TODO add jade_id
           fr"WHERE id = t.id"
         ).combineAll.toString
       ).updateMany(newIds)

@@ -3,6 +3,8 @@ package org.broadinstitute.monster.ingester.core.models
 import java.time.OffsetDateTime
 import java.util.UUID
 
+import io.circe.{Decoder, Encoder}
+import io.circe.derivation.{deriveDecoder, deriveEncoder}
 import org.broadinstitute.monster.ingester.jade.models.JobStatus
 
 /**
@@ -23,3 +25,9 @@ case class JobSummary(
   submitted: OffsetDateTime,
   completed: OffsetDateTime
 )
+
+object JobSummary {
+  implicit val decoder: Decoder[JobSummary] = deriveDecoder
+  implicit val encoder: Encoder[JobSummary] = deriveEncoder
+}
+
