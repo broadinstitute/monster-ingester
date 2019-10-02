@@ -76,7 +76,6 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       val jobs = ingestData.tables.map {
         case JobData(prefix, tableName) =>
           (
-            UUID.randomUUID(), // TODO its not a uuid, we want a sequential iterated Long integer?
             rId,
             JobStatus.Pending: JobStatus,
             prefix,
@@ -85,14 +84,15 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       }
       // update table
       for {
-        jobsAdded <- Update[(UUID, UUID, JobStatus, String, String)](
-          s"INSERT INTO $JobsTable (id, request_id, status, path_prefix, table_name) VALUES (?, ?, ?, ?, ?)"
+        jobsAdded <- Update[(UUID, JobStatus, String, String)](
+          s"INSERT INTO $JobsTable (request_id, status, path_prefix, table_name) VALUES (?, ?, ?, ?)"
         ).updateMany(jobs)
       } yield (jobsAdded)
     }
   }
 
   // TODO maybe break out all these steps into individual private methods
+  // TODO copy PostgresSpec, db migrations project, add to build, have core depend on it
   // need a method (this should maybe be in another class, like the listener in Transporter) to submit jobs to Jade
   private def submitJobs(maxJobsAllowed: Int, now: Instant): ConnectionIO[Int] = {
     for {
@@ -114,19 +114,21 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
         .to[List]
 
       // submit (max number of jobs - number of jobs running) to Jade API
-      newIds <- Async[ConnectionIO].liftIO( // TODO this is List[JobInfo] which is almost right, need it to include our ID too
+      newIds <- Async[ConnectionIO].liftIO(
         jobsToSubmit.traverse { job =>
-          jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.table))
+          jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.table)).map {ingested =>
+            (job.id, ingested.id, ingested.jobStatus, ingested.completed, ingested.submitted)
+          }
         }
       )
 
       // update the JobsTable; update the requests that have moved from pending to running
-      numUpdated <- Update[JobInfo]( // TODO update type from JobInfo
+      numUpdated <- Update[(Long, UUID, JobStatus, Option[OffsetDateTime], Option[OffsetDateTime])](
         List(
           Fragment.const(s"UPDATE $JobsTable"),
-          fr"SET status = t.status, jade_id = t.jade_id, updated =" ++ Fragment
+          fr"SET status = t.status, jade_id = t.jade_id, submitted = t.submitted, updated =" ++ Fragment
             .const(timestampSql(now)),
-          fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)", // TODO add jade_id
+          fr"FROM (VALUES (?, ?, ?, ?, ?)) AS t (id, jade_id, status, completed, submitted)",
           fr"WHERE id = t.id"
         ).combineAll.toString
       ).updateMany(newIds)

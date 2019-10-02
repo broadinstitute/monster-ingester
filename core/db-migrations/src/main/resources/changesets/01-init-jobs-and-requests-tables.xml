@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.1.xsd">
+
+    <changeSet id="1" author="raaid">
+
+        <createTable tableName="requests">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" />
+            </column>
+            <column name="submitted" type="smalldatetime">
+                <constraints nullable="false" />
+            </column>
+            <column name="datasetId" type="uuid">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+
+        <sql>
+            DROP TYPE IF EXISTS job_status;
+            CREATE TYPE job_status AS ENUM ('pending', 'running', 'failed', 'succeeded')
+        </sql>
+
+        <createTable tableName="jobs">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" />
+            </column>
+            <column name="request_id" type="uuid">
+                <constraints nullable="false" />
+            </column>
+            <column name="status" type="job_status">
+                <constraints nullable="false" />
+            </column>
+            <column name="path" type="varchar">
+                <constraints nullable="false" />
+            </column>
+            <column name="table" type="varchar">
+                <constraints nullable="false" />
+            </column>
+            <column name="submitted" type="smalldatetime">
+                <constraints nullable="false" />
+            </column>
+            <column name="completed" type="smalldatetime">
+                <constraints nullable="false" />
+            </column>
+            <column name="updated" type="smalldatetime">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+
+        <createIndex tableName="jobs" indexName="jobs_status">
+            <column name="status" />
+        </createIndex>
+
+        <rollback>
+            <dropTable tableName="jobs" />
+            <sql>DROP TYPE job_status</sql>
+            <dropTable tableName="requests" />
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

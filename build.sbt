@@ -33,6 +33,9 @@ val googleCloudJavaVersion = "1.90.0"
 val scalaMockVersion = "4.4.0"
 val scalaTestVersion = "3.0.8"
 val vaultDriverVersion = "5.0.0"
+val liquibaseVersion = "3.7.0"
+val testcontainersVersion = "1.12.0"
+val testcontainersScalaVersion = "0.29.0"
 
 // Settings to apply to all sub-projects.
 // Can't be applied at the build level because of scoping rules.
@@ -75,7 +78,7 @@ lazy val `jade-client` = project
 lazy val `core` = project
   .in(file("core"))
   .enablePlugins(BasePlugin)
-  .dependsOn(`jade-client`)
+  .dependsOn(`jade-client`, `core-migrations`)
   .settings(commonSettings)
   .settings(
     libraryDependencies ++= Seq(
@@ -91,9 +94,20 @@ lazy val `core` = project
       "org.tpolecat" %% "doobie-hikari" % doobieVersion,
       "org.tpolecat" %% "doobie-postgres" % doobieVersion,
       "org.tpolecat" %% "doobie-postgres-circe" % doobieVersion,
-
     ),
+    libraryDependencies ++= Seq(
+      "com.dimafeng" %% "testcontainers-scala" % testcontainersScalaVersion,
+      "io.circe" %% "circe-literal" % circeVersion,
+      "org.liquibase" % "liquibase-core" % liquibaseVersion,
+      "org.scalamock" %% "scalamock" % scalaMockVersion,
+      "org.scalatest" %% "scalatest" % scalaTestVersion,
+      "org.testcontainers" % "postgresql" % testcontainersVersion
+    ).map(_ % Test),
     dependencyOverrides := Seq(
       "org.postgresql" % "postgresql" % postgresqlDriverVersion
     )
   )
+
+lazy val `core-migrations` = project
+  .in(file("./core/db-migrations"))
+  .settings(commonSettings)
