@@ -20,4 +20,7 @@ object JobStatus extends Enum[JobStatus] with CirceEnum[JobStatus] {
 
   /** Status for ingest jobs that have failed. */
   case object Failed extends JobStatus
+
+  /** Status for ingest jobs that have not yet been submitted. */
+  case object Pending extends JobStatus
 }

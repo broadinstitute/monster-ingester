@@ -5,28 +5,48 @@ import java.util.UUID
 
 import cats.effect.{Async, Clock, IO}
 import cats.implicits._
-import doobie.{Fragment, _}
+import doobie._
 import doobie.util.transactor.Transactor
 import doobie.implicits._
+import org.broadinstitute.monster.ingester.core.ApiError.NotFound
+import org.broadinstitute.monster.ingester.core.IngestController.JobSubmission
+import org.broadinstitute.monster.ingester.core.models.{IngestData, JobData, JobSummary, RequestSummary}
 import org.broadinstitute.monster.ingester.jade.JadeApiClient
-import org.broadinstitute.monster.ingester.jade.models.{JobInfo, JobStatus}
+import org.broadinstitute.monster.ingester.jade.models.{IngestRequest, JobInfo, JobStatus}
 
-/** TODO DOCSTRING */
-class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(implicit clk: Clock[IO]) {
+/**
+ * Component responsible for backing Ingester's API and providing the core logic for ingesting.
+ *
+ * This component has methods to process requests and add them to the database, expand them
+ * out into jobs, submit those jobs to the Jade API, and update the status of jobs. This component
+ * also provides methods by which a user can check on the status of a request or the status of all
+ * jobs under a request.
+ *
+ * @param dbClient Client to interact with Ingester's backing database.
+ * @param jadeClient Client to interact with the Jade Data Repository API.
+ */
+class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
+  implicit clk: Clock[IO]
+) {
 
   import Constants._
 
   // need a method to run all steps of an ingest; returns the request ID to check the status of?
-  def ingest(ingestRequest: IngestRequest, datasetId: UUID): IO[UUID] = ???
+  def ingest(ingestRequest: IngestData, datasetId: UUID): IO[UUID] = ???
 
   private def getNow: IO[Instant] =
     clk.realTime(scala.concurrent.duration.MILLISECONDS).map(Instant.ofEpochMilli)
 
-  /** TODO DOCSTRING */
-  private def createRequest(datasetId: UUID): ConnectionIO[UUID] = {
+  /**
+   * Update the requests table with a request.
+   *
+   * @param datasetId Id of the dataset in the Repo to ingest data into.
+   * @param now the current time for timestamps.
+   * @return the Id of the newly added request.
+   */
+  private def createRequest(datasetId: UUID, now: Instant): ConnectionIO[UUID] = {
     // create request id
     val requestId = UUID.randomUUID()
-    val now = getNow.unsafeRunSync()
 
     val updateSql = List(
       Fragment.const(s"INSERT INTO $RequestsTable (id, submitted_at, dataset_id) VALUES"),
@@ -41,67 +61,126 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(impl
     }
   }
 
-  // need a method to generate UUIDs for subRequests for a request and add them to the subRequestsTable, returns list of subreq ids
-  private def createJobs(ingestRequest: IngestRequest, requestId: UUID): ConnectionIO[Unit] = {
-    // generate UUID for each subrequest in a request
-    val now = getNow.unsafeRunSync()
-    val jobs = ingestRequest.tables.map { case JobData(prefix, tableName) =>
-      (
-        requestId,
-        "pending", // TODO create enum class for this one's statuses
-        prefix,
-        tableName,
-        timestampSql(now)
-      )
+  /**
+   * Update the jobs table with one job for every path/table combination in a request.
+   *
+   * @param ingestData the list of paths and table names used to create jobs.
+   * @param requestId the Id of the request under which to create jobs.
+   * @return the number of jobs added to the jobs table.
+   */
+  private def createJobs(ingestData: IngestData, requestId: UUID): IO[Int] = {
+    checkAndExec(requestId) { rId =>
+      // generate UUID for each subrequest in a request
+      val jobs = ingestData.tables.map {
+        case JobData(prefix, tableName) =>
+          (
+            UUID.randomUUID(), // TODO its not a uuid, we want a sequential iterated Long integer
+            rId,
+            JobStatus.Pending: JobStatus,
+            prefix,
+            tableName,
+          )
+      }
+      // update table
+      for {
+        jobsAdded <- Update[(UUID, UUID, JobStatus, String, String)](
+          s"INSERT INTO $JobsTable (id, request_id, status, path_prefix, table_name) VALUES (?, ?, ?, ?, ?)"
+        ).updateMany(jobs)
+      } yield (jobsAdded)
     }
-    // update table
-    for {
-      _ <- Update[(UUID, String, String, String, String)](
-        s"INSERT INTO $JobsTable (request_id, status, path_prefix, table_name, submitted) VALUES (?, ?, ?, ?, ?)"
-      ).updateMany(jobs)
-    } yield ()
   }
 
+  // TODO maybe break out all these steps into individual private methods
   // need a method (this should maybe be in another class, like the listener in Transporter) to submit jobs to Jade
-  private def submitJobs: ConnectionIO[List[UUID]] = {
-    // see how many jobs are running
-
-    // submit (max number of jobs - number of jobs running) to Jade API
-
-    // update the JobsTable; update the requests that have moved from pending to running
-  }
-
-  /** TODO DOCSTRING */
-  def requestStatus(requestId: UUID): ConnectionIO[RequestStatus] = {
+  private def submitJobs(maxJobsAllowed: Int, now: Instant): ConnectionIO[Int] = {
     for {
-      submittedTime <- List(
-        Fragment.const(s"SELECT submitted FROM $RequestsTable"),
-        fr"WHERE id = $requestId LIMIT 1"
+      // see how many jobs are running
+      runningCount <- List(
+        Fragment.const(s"SELECT COUNT(*) FROM $JobsTable"),
+        fr"WHERE status = ${JobStatus.Running: JobStatus}"
       ).combineAll
-        .query[OffsetDateTime]
+        .query[Long]
         .unique
-      counts <- List(
-        Fragment.const(s"SELECT COUNT(*), status FROM $JobsTable"),
-        fr"WHERE id = $requestId",
-        fr"GROUP BY status"
+
+      // select the dataset IDs, table names, and path names to submit
+      jobsToSubmit <- List(
+        Fragment.const(s"SELECT t.id, r.id, t.path, t.table, r.datasetId FROM $JoinTable"),
+        fr"WHERE status = ${JobStatus.Pending: JobStatus}",
+        fr"LIMIT ${maxJobsAllowed - runningCount}"
       ).combineAll
-        .query[(Long, String)]
+        .query[JobSubmission]
         .to[List]
+
+      // submit (max number of jobs - number of jobs running) to Jade API
+      newIds <- Async[ConnectionIO].liftIO(
+        jobsToSubmit.traverse { job =>
+          jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.table))
+        }
+      )
+
+      // update the JobsTable; update the requests that have moved from pending to running
+      numUpdated <- Update[JobInfo](
+        List(
+          Fragment.const(s"UPDATE $JobsTable"),
+          fr"SET status = t.status, jade_id = t.jade_id, updated =" ++ Fragment
+            .const(timestampSql(now)),
+          fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)",
+          fr"WHERE id = t.id"
+        ).combineAll.toString
+      ).updateMany(newIds)
     } yield {
-      RequestStatus(submittedTime, counts)
+      numUpdated
     }
   }
 
-  /** TODO DOCSTRING */
-  def enumerateJobs(requestId: UUID): ConnectionIO[List[JobSummary]] = {
-    for {
-      statuses <- List(
-        Fragment.const(s"SELECT id, status, path, table, submitted, completed FROM $JobsTable"),
-        fr"WHERE requestId = $requestId"
-      ).combineAll
-        .query[JobSummary]
-        .to[List]
-    } yield (statuses)
+  /**
+   * Provides the submission time and count of all jobs grouped by status.
+   *
+   * @param requestId Id of the request to check the status of.
+   * @return a RequestSummary for the given requestId.
+   */
+  def requestStatus(requestId: UUID): IO[RequestSummary] = {
+    checkAndExec(requestId) { rId =>
+      for {
+        submittedTime <- List(
+          Fragment.const(s"SELECT submitted FROM $RequestsTable"),
+          fr"WHERE id = $rId LIMIT 1"
+        ).combineAll
+          .query[OffsetDateTime]
+          .unique
+        counts <- List(
+          Fragment.const(s"SELECT COUNT(*), status FROM $JobsTable"),
+          fr"WHERE id = $rId",
+          fr"GROUP BY status"
+        ).combineAll
+          .query[(Long, String)]
+          .to[List]
+      } yield {
+        models.RequestSummary(submittedTime, counts)
+      }
+    }
+  }
+
+  /**
+   * Provides the Jade Id, status, path of files being ingested, table name, submitted time, and completed time for
+   * all jobs under a request.
+   *
+   * @param requestId Id of the request for which to enumerate jobs.
+   * @return a list of job summaries for all jobs under the request.
+   */
+  def enumerateJobs(requestId: UUID): IO[List[JobSummary]] = {
+    checkAndExec(requestId) { rId =>
+      for {
+        statuses <- List(
+          Fragment.const(
+            s"SELECT repo_id, status, path, table, submitted, completed FROM $JobsTable"
+          ),
+          fr"WHERE requestId = $rId"
+        ).combineAll
+          .query[JobSummary]
+          .to[List]
+      } yield (statuses)
+    }
   }
 
   // need a method for our API's status, return a status type for the api (new type)
@@ -109,7 +188,14 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(impl
     ???
   }
 
-  /** TODO DOCSTRING */
+  // TODO consider breaking this up into multiple methods
+  /**
+   * Hits the Jade API to check for status updates on running jobs.
+   *
+   * @param limit maximum number of jobs to update in one go.
+   * @param now current time for timestamps.
+   * @return the number of jobs updated.
+   */
   private def updateJobStatus(limit: Int, now: Instant): ConnectionIO[Int] = {
     // sweep jobs db for jobs that have ids
     for {
@@ -117,7 +203,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(impl
         Fragment.const(s"SELECT id FROM $JobsTable"),
         Fragments.whereAnd(
           fr"id IS NOT NULL",
-          fr"completed IS NULL",
+          fr"status = ${JobStatus.Running: JobStatus}"
         ),
         fr"ORDER BY updated ASC LIMIT $limit"
       ).combineAll
@@ -125,28 +211,31 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(impl
         .to[List]
 
       // hit jade job result endpoint for each job
-      statuses <- Async[ConnectionIO].liftIO(ids.traverse { id => jadeClient.jobStatus(id) })
+      statuses <- Async[ConnectionIO].liftIO(ids.traverse { id =>
+        jadeClient.jobStatus(id)
+      })
 
       // if status has changed, update, else remain (upsert)
-      numUpdated <- Update[JobInfo](List(
-        Fragment.const(s"UPDATE $JobsTable"),
-        fr"SET status = t.status, completed = t.completed, submitted = t.submitted, updated =" ++ Fragment.const(timestampSql(now)),
-        fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)",
-        fr"WHERE id = t.id"
-      ).combineAll.toString).updateMany(statuses)
+      numUpdated <- Update[JobInfo](
+        List(
+          Fragment.const(s"UPDATE $JobsTable"),
+          fr"SET status = t.status, completed = t.completed, submitted = t.submitted, updated =" ++ Fragment
+            .const(timestampSql(now)),
+          fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)",
+          fr"WHERE id = t.id"
+        ).combineAll.toString
+      ).updateMany(statuses)
     } yield {
       numUpdated
     }
-
   }
 
-  // TODO make a helper that is like "validate request" or something like we have in transporter; not sure if needed
-
   /**
-   * Check that a request with the given ID exists, then run an operation using the ID as input.
-   *
-   * TODO fill this out properly
-   */
+    * Check that a request with the given ID exists, then run an operation using the ID as input.
+    *
+    * @param requestId Id of the request to check and use.
+   *  @return the result of whatever function
+    */
   private def checkAndExec[Out](requestId: UUID)(
     f: UUID => ConnectionIO[Out]
   ): IO[Out] = {
@@ -168,4 +257,18 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(impl
 
     transaction.transact(dbClient)
   }
+}
+
+object IngestController {
+
+  /**
+   * Convenience case class to make submitJobs more readable.
+   *
+   * @param id the job Id that we generate.
+   * @param requestId the request Id that we generate.
+   * @param path the path to ingest from.
+   * @param table the table name to ingest to.
+   * @param datasetId the Id of the dataset in the Repo to ingest into.
+   */
+  private case class JobSubmission(id: Long, requestId: UUID, path: String, table: String, datasetId: UUID)
 }
