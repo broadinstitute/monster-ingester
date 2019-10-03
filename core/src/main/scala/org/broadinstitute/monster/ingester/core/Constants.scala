@@ -3,7 +3,7 @@ package org.broadinstitute.monster.ingester.core
 import java.time.Instant
 
 import cats.implicits._
-import doobie.Fragment
+import doobie.util.fragment.Fragment
 import doobie.implicits._
 
 object Constants {

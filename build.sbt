@@ -66,6 +66,7 @@ lazy val `jade-client` = project
       "org.http4s" %% "http4s-blaze-client" % http4sVersion,
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion,
+      "org.tpolecat" %% "doobie-postgres" % doobieVersion,
       "org.broadinstitute.monster" %% "gcs-lib" % gcsLibVersion
     ),
     libraryDependencies ++= Seq(
