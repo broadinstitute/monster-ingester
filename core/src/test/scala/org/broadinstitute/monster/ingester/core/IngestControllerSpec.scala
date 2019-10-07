@@ -1,6 +1,7 @@
 package org.broadinstitute.monster.ingester.core
 
 import java.sql.Timestamp
+import java.time.format.DateTimeFormatter
 import java.time.{Instant, OffsetDateTime}
 import java.util.UUID
 
@@ -9,11 +10,12 @@ import cats.implicits._
 import doobie.implicits._
 import doobie.Transactor
 import doobie.util.fragment.Fragment
+import fs2.Stream
 import org.broadinstitute.monster.ingester.core.ApiError.NotFound
 import org.broadinstitute.monster.ingester.core.models.{IngestData, JobData}
 import org.broadinstitute.monster.ingester.jade.JadeApiClient
 import org.broadinstitute.monster.ingester.jade.models.JobStatus
-import org.http4s.{Request, Response}
+import org.http4s.{Request, Response, Status}
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.EitherValues
 
@@ -86,6 +88,22 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
 
   private val apiEmpty = buildApi { _ =>
     Resource.pure(Response[IO]())
+  }
+
+  private val apiIngest = buildApi { _ =>
+    val thetimestring =
+      OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+    Resource.liftF(
+      IO.pure(
+        Response[IO](
+          status = Status.Ok,
+          body = Stream.emits(
+            s"""{ "status_code": 200, "id": "${UUID
+              .randomUUID()}", "job_status": "running", "submitted": "$thetimestring" }""".getBytes
+          )
+        )
+      )
+    )
   }
 
   def getNow: IO[Instant] =
@@ -167,10 +185,12 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
       for {
         _ <- controller.initJobs(myData, request3Id)
         real <- List(
-          Fragment.const(s"SELECT id, request_id, path, table_name FROM $JobsTable"),
+          Fragment.const(
+            s"SELECT id, request_id, status, path, table_name FROM $JobsTable"
+          ),
           fr"WHERE request_id = $request3Id"
         ).combineAll
-          .query[(Long, UUID, String, String)]
+          .query[(Long, UUID, JobStatus, String, String)]
           .to[List]
           .transact(tx)
       } yield {
@@ -180,6 +200,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
             (
               i + 1 + request1Jobs.length + request2Jobs.length,
               request3Id,
+              JobStatus.Pending,
               path,
               tableName
             )
@@ -187,7 +208,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
       }
   }
 
-  it should "fail to initialize jobs under a request that doesn't yet exist" in withController(
+  it should "raise a NotFound error if job initialization is attempted under a nonexistent request" in withController(
     apiEmpty
   ) { (_, controller) =>
     val myData = IngestData(
@@ -202,4 +223,66 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
       .attempt
       .map(_.left.value shouldBe NotFound(request1Id))
   }
+
+  // submitJobs
+  it should "return the number of jobs that have been updated to 'running'" in withRequest(
+    apiIngest
+  ) { (tx, controller) =>
+    for {
+      now <- getNow
+      count <- controller.submitJobs(5, now)
+      real <- List(
+        Fragment.const(s"SELECT COUNT(*) FROM jobs"),
+        fr"WHERE status = ${JobStatus.Running: JobStatus}"
+      ).combineAll
+        .query[Long]
+        .unique
+        .transact(tx)
+    } yield {
+      count shouldBe real
+    }
+  }
+
+  // requestStatus
+  it should "return correctly formatted request status" in withRequest(apiEmpty) {
+    (tx, controller) =>
+      for {
+        _ <- sql"""INSERT INTO jobs
+                  (request_id, status, path, table_name)
+                  VALUES
+                  ($request1Id, ${JobStatus.Running: JobStatus}, 'prunning', 'trunning')""".update.run.void
+          .transact(tx)
+        _ <- sql"""INSERT INTO jobs
+                  (request_id, status, path, table_name)
+                  VALUES
+                  ($request1Id, ${JobStatus.Succeeded: JobStatus}, 'psucceeded', 'tsucceeded')""".update.run.void
+          .transact(tx)
+        _ <- sql"""INSERT INTO jobs
+                  (request_id, status, path, table_name)
+                  VALUES
+                  ($request1Id, ${JobStatus.Failed: JobStatus}, 'pfailed', 'tfailed')""".update.run.void
+          .transact(tx)
+        real <- controller.requestStatus(request1Id)
+      } yield {
+        real.statusCounts should contain theSameElementsAs List(
+          (10, JobStatus.Pending),
+          (1, JobStatus.Running),
+          (1, JobStatus.Succeeded),
+          (1, JobStatus.Failed)
+        )
+      }
+  }
+
+  it should "raise a NotFound error if the status of a nonexistent request is requested" in withController(
+    apiEmpty
+  ) { (_, controller) =>
+    controller
+      .requestStatus(request1Id)
+      .attempt
+      .map(_.left.value shouldBe NotFound(request1Id))
+  }
+
+  // enumerateJobs
+
+  // updateJobStatus
 }

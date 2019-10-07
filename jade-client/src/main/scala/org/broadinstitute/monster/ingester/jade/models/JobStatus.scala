@@ -9,14 +9,14 @@ import io.circe.{KeyDecoder, KeyEncoder}
 import scala.collection.immutable.IndexedSeq
 
 /** Possible job status responses from the Jade Data Repo API for ingest requests. */
-sealed trait JobStatus extends EnumEntry with Product with Serializable with Lowercase
+sealed trait JobStatus extends EnumEntry with Lowercase with Product with Serializable
 
 object JobStatus
     extends Enum[JobStatus]
     with CirceEnum[JobStatus]
     with PostgresInstances {
 
-  override val toString: String = "TransferStatus"
+  override val toString: String = "JobStatus"
 
   override val values: IndexedSeq[JobStatus] = findValues
 

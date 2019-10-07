@@ -8,13 +8,13 @@
 
         <createTable tableName="requests">
             <column name="id" type="uuid">
-                <constraints primaryKey="true" />
+                <constraints primaryKey="true"/>
             </column>
             <column name="submitted" type="timestamp">
-                <constraints nullable="false" />
+                <constraints nullable="false"/>
             </column>
             <column name="dataset_id" type="uuid">
-                <constraints nullable="false" />
+                <constraints nullable="false"/>
             </column>
         </createTable>
 
@@ -25,34 +25,36 @@
 
         <createTable tableName="jobs">
             <column name="id" type="serial" autoIncrement="true" startWith="1" incrementBy="1">
-                <constraints primaryKey="true" />
+                <constraints primaryKey="true"/>
             </column>
             <column name="request_id" type="uuid">
-                <constraints nullable="false" />
+                <constraints nullable="false"
+                             foreignKeyName="fk_request_id"
+                             references="requests(id)"/>
             </column>
-            <column name="jade_id" type="uuid" />
+            <column name="jade_id" type="uuid"/>
             <column name="status" type="job_status">
-                <constraints nullable="false" />
+                <constraints nullable="false"/>
             </column>
             <column name="path" type="varchar">
-                <constraints nullable="false" />
+                <constraints nullable="false"/>
             </column>
             <column name="table_name" type="varchar">
-                <constraints nullable="false" />
+                <constraints nullable="false"/>
             </column>
-            <column name="submitted" type="smalldatetime" />
-            <column name="completed" type="smalldatetime" />
-            <column name="updated" type="smalldatetime" />
+            <column name="submitted" type="smalldatetime"/>
+            <column name="completed" type="smalldatetime"/>
+            <column name="updated" type="smalldatetime"/>
         </createTable>
 
         <createIndex tableName="jobs" indexName="jobs_status">
-            <column name="status" />
+            <column name="status"/>
         </createIndex>
 
         <rollback>
-            <dropTable tableName="jobs" />
+            <dropTable tableName="jobs"/>
             <sql>DROP TYPE job_status</sql>
-            <dropTable tableName="requests" />
+            <dropTable tableName="requests"/>
         </rollback>
     </changeSet>
 

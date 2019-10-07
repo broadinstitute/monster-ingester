@@ -119,9 +119,10 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       // select the dataset IDs, table names, and path names to submit
       jobsToSubmit <- List(
         Fragment.const(
-          s"SELECT t.id, r.id, t.path, t.table, r.datasetId FROM $JoinTable"
+          s"SELECT t.id, r.id, t.path, t.table_name, r.dataset_id FROM"
         ),
-        fr"WHERE status = ${JobStatus.Pending: JobStatus}",
+        JoinTable,
+        fr"WHERE t.status = ${JobStatus.Pending: JobStatus}",
         fr"LIMIT ${maxJobsAllowed - runningCount}"
       ).combineAll
         .query[JobSubmission]
@@ -130,7 +131,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       // submit (max number of jobs - number of jobs running) to Jade API
       newIds <- Async[ConnectionIO].liftIO(
         jobsToSubmit.traverse { job =>
-          jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.table)).map {
+          jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.tableName)).map {
             ingested =>
               (
                 job.id,
@@ -151,7 +152,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
           Fragment.const(s"UPDATE $JobsTable"),
           fr"SET status = t.status, jade_id = t.jade_id, submitted = t.submitted, updated =" ++ Fragment
             .const(timestampSql(now)),
-          fr"FROM (VALUES (?, ?, ?, ?, ?)) AS t (id, jade_id, status, completed, submitted)",
+          fr"FROM (VALUES (?, ?, ?, ?, ?) AS t (id, jade_id, status, completed, submitted))",
           fr"WHERE id = t.id"
         ).combineAll.toString
       ).updateMany(newIds)
@@ -179,10 +180,10 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
           .unique
         counts <- List(
           Fragment.const(s"SELECT COUNT(*), status FROM $JobsTable"),
-          fr"WHERE id = $rId",
+          fr"WHERE request_id = $rId",
           fr"GROUP BY status"
         ).combineAll
-          .query[(Long, String)]
+          .query[(Long, JobStatus)]
           .to[List]
       } yield {
         models.RequestSummary(submittedTime, counts)
@@ -296,14 +297,14 @@ object IngestController {
     * @param id the job Id that we generate.
     * @param requestId the request Id that we generate.
     * @param path the path to ingest from.
-    * @param table the table name to ingest to.
+    * @param tableName the table name to ingest to.
     * @param datasetId the Id of the dataset in the Repo to ingest into.
     */
   private case class JobSubmission(
     id: Long,
     requestId: UUID,
     path: String,
-    table: String,
+    tableName: String,
     datasetId: UUID
   )
 }
