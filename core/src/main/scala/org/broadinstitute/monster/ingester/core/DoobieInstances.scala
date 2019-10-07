@@ -1,7 +1,7 @@
 package org.broadinstitute.monster.ingester.core
 
 import java.sql.Timestamp
-import java.time.{OffsetDateTime, ZoneId}
+import java.time.{OffsetDateTime, ZoneId, ZoneOffset}
 
 import cats.implicits._
 import doobie.{Get, Put}
@@ -28,7 +28,7 @@ object DoobieInstances extends PostgresInstances with JsonInstances {
   }
 
   implicit val odtPut: Put[OffsetDateTime] = Put[Timestamp].contramap { ts =>
-    Timestamp.from(ts.toInstant)
+    Timestamp.valueOf(ts.atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime)
   }
 
   /**

@@ -83,6 +83,7 @@ lazy val `core` = project
   .settings(commonSettings)
   .settings(
     libraryDependencies ++= Seq(
+      "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-derivation" % circeDerivationVersion,
       "io.circe" %% "circe-parser" % circeVersion,

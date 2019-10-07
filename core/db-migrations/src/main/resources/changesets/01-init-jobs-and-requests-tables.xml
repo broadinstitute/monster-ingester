@@ -10,10 +10,10 @@
             <column name="id" type="uuid">
                 <constraints primaryKey="true" />
             </column>
-            <column name="submitted" type="smalldatetime">
+            <column name="submitted" type="timestamp">
                 <constraints nullable="false" />
             </column>
-            <column name="datasetId" type="uuid">
+            <column name="dataset_id" type="uuid">
                 <constraints nullable="false" />
             </column>
         </createTable>
@@ -24,19 +24,20 @@
         </sql>
 
         <createTable tableName="jobs">
-            <column name="id" type="uuid">
+            <column name="id" type="serial" autoIncrement="true" startWith="1" incrementBy="1">
                 <constraints primaryKey="true" />
             </column>
             <column name="request_id" type="uuid">
                 <constraints nullable="false" />
             </column>
+            <column name="jade_id" type="uuid" />
             <column name="status" type="job_status">
                 <constraints nullable="false" />
             </column>
             <column name="path" type="varchar">
                 <constraints nullable="false" />
             </column>
-            <column name="table" type="varchar">
+            <column name="table_name" type="varchar">
                 <constraints nullable="false" />
             </column>
             <column name="submitted" type="smalldatetime" />

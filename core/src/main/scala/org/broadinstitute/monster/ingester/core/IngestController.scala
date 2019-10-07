@@ -7,7 +7,9 @@ import cats.effect.{Async, Clock, IO}
 import cats.implicits._
 import doobie._
 import doobie.implicits._
+import doobie.util.log.LogHandler
 import doobie.util.transactor.Transactor
+import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import org.broadinstitute.monster.ingester.core.ApiError.NotFound
 import org.broadinstitute.monster.ingester.core.IngestController.JobSubmission
 import org.broadinstitute.monster.ingester.core.models.{
@@ -37,10 +39,13 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
   import DoobieInstances._
   import Constants._
 
+  private val logger = Slf4jLogger.getLogger[IO]
+  private implicit val logHandler: LogHandler = DbLogHandler(logger)
+
   // need a method to run all steps of an ingest; returns the request ID to check the status of?
   def ingest(ingestRequest: IngestData, datasetId: UUID): IO[UUID] = ???
 
-  private def getNow: IO[Instant] =
+  def getNow: IO[Instant] =
     clk.realTime(scala.concurrent.duration.MILLISECONDS).map(Instant.ofEpochMilli)
 
   /**
@@ -50,21 +55,25 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param now the current time for timestamps.
     * @return the Id of the newly added request.
     */
-  private def createRequest(datasetId: UUID, now: Instant): ConnectionIO[UUID] = {
+  def createRequest(datasetId: UUID, now: Instant): IO[UUID] = {
     // create request id
     val requestId = UUID.randomUUID()
 
+    // TODO we might want to consider hitting Jade's API to validate the datasetId before
+    // inserting it in the requests table
     val updateSql = List(
-      Fragment.const(s"INSERT INTO $RequestsTable (id, submitted_at, dataset_id) VALUES"),
-      fr"($requestId, ${timestampSql(now)}, $datasetId)"
+      Fragment.const(s"INSERT INTO $RequestsTable (id, submitted, dataset_id) VALUES"),
+      fr"($requestId," ++ Fragment.const(timestampSql(now)) ++ fr", $datasetId)"
     ).combineAll
 
     // return id and add to requestTable
-    for {
+    val transaction = for {
       requestId <- updateSql.update.withUniqueGeneratedKeys[UUID]("id")
     } yield {
       requestId
     }
+
+    transaction.transact(dbClient)
   }
 
   /**
@@ -74,7 +83,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param requestId the Id of the request under which to create jobs.
     * @return the number of jobs added to the jobs table.
     */
-  private def initJobs(ingestData: IngestData, requestId: UUID): IO[Int] = {
+  def initJobs(ingestData: IngestData, requestId: UUID): IO[Int] = {
     checkAndExec(requestId) { rId =>
       // generate UUID for each subrequest in a request
       val jobs = ingestData.tables.map {
@@ -89,7 +98,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       // update table
       for {
         jobsAdded <- Update[(UUID, JobStatus, String, String)](
-          s"INSERT INTO $JobsTable (request_id, status, path_prefix, table_name) VALUES (?, ?, ?, ?)"
+          s"INSERT INTO $JobsTable (request_id, status, path, table_name) VALUES (?, ?, ?, ?)"
         ).updateMany(jobs)
       } yield (jobsAdded)
     }
@@ -97,8 +106,8 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
 
   // TODO maybe break out all these steps into individual private methods
   // need a method (this should maybe be in another class, like the listener in Transporter) to submit jobs to Jade
-  private def submitJobs(maxJobsAllowed: Int, now: Instant): ConnectionIO[Int] = {
-    for {
+  def submitJobs(maxJobsAllowed: Int, now: Instant): IO[Int] = {
+    val transaction = for {
       // see how many jobs are running
       runningCount <- List(
         Fragment.const(s"SELECT COUNT(*) FROM $JobsTable"),
@@ -149,6 +158,8 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     } yield {
       numUpdated
     }
+
+    transaction.transact(dbClient)
   }
 
   /**
@@ -201,7 +212,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     }
   }
 
-  // need a method for our API's status, return a status type for the api (new type)
+  // TODO need a method for our API's status, return a status type for the api (new type)
   def apiStatus: IO[ApiStatus] = {
     ???
   }
@@ -214,7 +225,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param now current time for timestamps.
     * @return the number of jobs updated.
     */
-  private def updateJobStatus(limit: Int, now: Instant): ConnectionIO[Int] = {
+  def updateJobStatus(limit: Int, now: Instant): ConnectionIO[Int] = {
     // sweep jobs db for jobs that have ids
     for {
       ids <- List(

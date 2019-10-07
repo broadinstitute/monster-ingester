@@ -122,7 +122,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
       api.ingest(UUID.randomUUID(), IngestRequest("herp", "derp")).attempt.unsafeRunSync()
     val errorResponse = actualBadRequest.fold(blah => blah, gah => gah)
     val expectedBadRequest =
-      JadeError(400, Right(ApiErrorBody(List("detail1", "detail2"), "message1")))
+      JadeError(400, Right(ApiErrorBody(Option(List("detail1", "detail2")), "message1")))
     errorResponse shouldBe expectedBadRequest
   }
 
@@ -196,7 +196,7 @@ class JadeApiClientSpec extends FlatSpec with Matchers {
       api.jobStatus(badId).attempt.unsafeRunSync()
     val errorResponse = actualBadRequest.fold(blah => blah, gah => gah)
     val expectedBadRequest =
-      JadeError(400, Right(ApiErrorBody(List("detail1", "detail2"), "message1")))
+      JadeError(400, Right(ApiErrorBody(Option(List("detail1", "detail2")), "message1")))
     errorResponse shouldBe expectedBadRequest
   }
 
