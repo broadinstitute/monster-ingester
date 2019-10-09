@@ -12,7 +12,7 @@ import doobie.Transactor
 import doobie.util.fragment.Fragment
 import fs2.Stream
 import org.broadinstitute.monster.ingester.core.ApiError.NotFound
-import org.broadinstitute.monster.ingester.core.models.{IngestData, JobData}
+import org.broadinstitute.monster.ingester.core.models.{IngestData, JobData, JobSummary}
 import org.broadinstitute.monster.ingester.jade.JadeApiClient
 import org.broadinstitute.monster.ingester.jade.models.JobStatus
 import org.http4s.{Request, Response, Status}
@@ -40,8 +40,12 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
   }
 
   private val request2Id = UUID.randomUUID()
-  private val request2Jobs = List.tabulate(20) { i =>
-    s"path$i" -> s"table$i"
+  private val request2Jobs = List.tabulate(3) { i =>
+    (
+      s"path$i",
+      s"table$i",
+      UUID.randomUUID()
+    )
   }
 
   private val request3Id = UUID.randomUUID()
@@ -75,11 +79,11 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
                   ($request1Id, ${JobStatus.Pending: JobStatus}, $path, $table)""".update.run.void
         }
         _ <- request2Jobs.traverse_ {
-          case (path, table) =>
+          case (path, table, jadeId) =>
             sql"""INSERT INTO jobs
-                  (request_id, status, path, table_name)
+                  (request_id, jade_id, status, path, table_name)
                   VALUES
-                  ($request2Id, ${JobStatus.Pending: JobStatus}, $path, $table)""".update.run.void
+                  ($request2Id, $jadeId, ${JobStatus.Running: JobStatus}, $path, $table)""".update.run.void
         }
       } yield ()
 
@@ -100,6 +104,22 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
           body = Stream.emits(
             s"""{ "status_code": 200, "id": "${UUID
               .randomUUID()}", "job_status": "running", "submitted": "$thetimestring" }""".getBytes
+          )
+        )
+      )
+    )
+  }
+
+  private val apiJobStatus = buildApi { req =>
+    val jobId = req.uri.toString().split("/").last
+    val thetimestring =
+      OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+    Resource.liftF(
+      IO.pure(
+        Response[IO](
+          status = Status.Ok,
+          body = Stream.emits(
+            s"""{ "status_code": 200, "id": "$jobId", "job_status": "succeeded", "completed": "$thetimestring" }""".getBytes
           )
         )
       )
@@ -228,49 +248,53 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
   it should "return the number of jobs that have been updated to 'running'" in withRequest(
     apiIngest
   ) { (tx, controller) =>
+    val runCount = List(
+      Fragment.const(s"SELECT COUNT(*) FROM $JobsTable"),
+      fr"WHERE status = ${JobStatus.Running: JobStatus}"
+    ).combineAll.query[Long].unique
+    val maxAllowed = 5
     for {
-      now <- getNow
-      count <- controller.submitJobs(5, now)
-      real <- List(
-        Fragment.const(s"SELECT COUNT(*) FROM jobs"),
-        fr"WHERE status = ${JobStatus.Running: JobStatus}"
-      ).combineAll
-        .query[Long]
-        .unique
-        .transact(tx)
+      run1 <- runCount.transact(tx)
+      count1 <- controller.submitJobs(maxAllowed) // already 3 running in the db
+      run2 <- runCount.transact(tx)
+      count2 <- controller.submitJobs(maxAllowed)
+      run3 <- runCount.transact(tx)
     } yield {
-      count shouldBe real
+      count1 shouldBe maxAllowed - run1.toLong // only as many as max jobs, returns right number (already 3 running in db)
+      count2 shouldBe maxAllowed - run2.toLong // returns 0 if max jobs are already running
+      run2 shouldBe run3 // make sure the number running doesn't change
     }
   }
 
   // requestStatus
-  it should "return correctly formatted request status" in withRequest(apiEmpty) {
-    (tx, controller) =>
-      for {
-        _ <- sql"""INSERT INTO jobs
+  it should "return a correctly formatted request status with correct data" in withRequest(
+    apiEmpty
+  ) { (tx, controller) =>
+    for {
+      _ <- sql"""INSERT INTO jobs
                   (request_id, status, path, table_name)
                   VALUES
                   ($request1Id, ${JobStatus.Running: JobStatus}, 'prunning', 'trunning')""".update.run.void
-          .transact(tx)
-        _ <- sql"""INSERT INTO jobs
+        .transact(tx)
+      _ <- sql"""INSERT INTO jobs
                   (request_id, status, path, table_name)
                   VALUES
                   ($request1Id, ${JobStatus.Succeeded: JobStatus}, 'psucceeded', 'tsucceeded')""".update.run.void
-          .transact(tx)
-        _ <- sql"""INSERT INTO jobs
+        .transact(tx)
+      _ <- sql"""INSERT INTO jobs
                   (request_id, status, path, table_name)
                   VALUES
                   ($request1Id, ${JobStatus.Failed: JobStatus}, 'pfailed', 'tfailed')""".update.run.void
-          .transact(tx)
-        real <- controller.requestStatus(request1Id)
-      } yield {
-        real.statusCounts should contain theSameElementsAs List(
-          (10, JobStatus.Pending),
-          (1, JobStatus.Running),
-          (1, JobStatus.Succeeded),
-          (1, JobStatus.Failed)
-        )
-      }
+        .transact(tx)
+      real <- controller.requestStatus(request1Id)
+    } yield {
+      real.statusCounts should contain theSameElementsAs List(
+        (10, JobStatus.Pending),
+        (1, JobStatus.Running),
+        (1, JobStatus.Succeeded),
+        (1, JobStatus.Failed)
+      )
+    }
   }
 
   it should "raise a NotFound error if the status of a nonexistent request is requested" in withController(
@@ -283,6 +307,59 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
   }
 
   // enumerateJobs
+  it should "return correctly formatted job summaries with correct data" in withRequest(
+    apiEmpty
+  ) { (tx, controller) =>
+    for {
+      jobs <- controller.enumerateJobs(request1Id)
+      check <- List(
+        Fragment.const(
+          s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
+        ),
+        fr"WHERE request_id = $request1Id"
+      ).combineAll
+        .query[JobSummary]
+        .to[List]
+        .transact(tx)
+    } yield {
+      jobs should contain theSameElementsAs check
+    }
+  }
+
+  it should "raise a NotFound error if the status of jobs under a nonexistent request is requested" in withController(
+    apiEmpty
+  ) { (_, controller) =>
+    controller
+      .enumerateJobs(request1Id)
+      .attempt
+      .map(_.left.value shouldBe NotFound(request1Id))
+  }
 
   // updateJobStatus
+  it should "return the number of running jobs that are updated" in withRequest(
+    apiJobStatus
+  ) { (tx, controller) =>
+    val runCount = List(
+      Fragment.const(s"SELECT COUNT(*) FROM $JobsTable"),
+      fr"WHERE status = ${JobStatus.Running: JobStatus}"
+    ).combineAll.query[Long].unique
+    val doneCount = List(
+      Fragment.const(s"SELECT COUNT(*) FROM $JobsTable"),
+      fr"WHERE status = ${JobStatus.Succeeded: JobStatus}"
+    ).combineAll.query[Long].unique
+    val limit = 2
+    for {
+      now <- getNow
+      run1 <- runCount.transact(tx)
+      done1 <- doneCount.transact(tx)
+      numUpdated1 <- controller.updateJobStatus(limit, now)
+      run2 <- runCount.transact(tx)
+      numUpdated2 <- controller.updateJobStatus(limit, now)
+      done3 <- doneCount.transact(tx)
+    } yield {
+      numUpdated1 shouldBe List(run1, limit.toLong).min
+      numUpdated2 shouldBe List(run2, limit.toLong).min
+      done3 shouldBe done1 + numUpdated1 + numUpdated2
+    }
+  }
 }

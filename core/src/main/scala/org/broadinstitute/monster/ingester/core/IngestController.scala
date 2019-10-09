@@ -19,7 +19,7 @@ import org.broadinstitute.monster.ingester.core.models.{
   RequestSummary
 }
 import org.broadinstitute.monster.ingester.jade.JadeApiClient
-import org.broadinstitute.monster.ingester.jade.models.{IngestRequest, JobInfo, JobStatus}
+import org.broadinstitute.monster.ingester.jade.models.{IngestRequest, JobStatus}
 
 /**
   * Component responsible for backing Ingester's API and providing the core logic for ingesting.
@@ -92,7 +92,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
             rId,
             JobStatus.Pending: JobStatus,
             prefix,
-            tableName
+            tableName // TODO include updated timestamp in the initialization?
           )
       }
       // update table
@@ -106,7 +106,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
 
   // TODO maybe break out all these steps into individual private methods
   // need a method (this should maybe be in another class, like the listener in Transporter) to submit jobs to Jade
-  def submitJobs(maxJobsAllowed: Int, now: Instant): IO[Int] = {
+  def submitJobs(maxJobsAllowed: Int): IO[Int] = {
     val transaction = for {
       // see how many jobs are running
       runningCount <- List(
@@ -129,7 +129,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
         .to[List]
 
       // submit (max number of jobs - number of jobs running) to Jade API
-      newIds <- Async[ConnectionIO].liftIO(
+      statuses <- Async[ConnectionIO].liftIO(
         jobsToSubmit.traverse { job =>
           jadeClient.ingest(job.datasetId, IngestRequest(job.path, job.tableName)).map {
             ingested =>
@@ -145,19 +145,19 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       )
 
       // update the JobsTable; update the requests that have moved from pending to running
-      numUpdated <- Update[
-        (Long, UUID, JobStatus, Option[OffsetDateTime], Option[OffsetDateTime])
-      ](
+      numUpdated <- statuses.traverse { row =>
         List(
           Fragment.const(s"UPDATE $JobsTable"),
-          fr"SET status = t.status, jade_id = t.jade_id, submitted = t.submitted, updated =" ++ Fragment
-            .const(timestampSql(now)),
-          fr"FROM (VALUES (?, ?, ?, ?, ?) AS t (id, jade_id, status, completed, submitted))",
-          fr"WHERE id = t.id"
-        ).combineAll.toString
-      ).updateMany(newIds)
+          fr"SET jade_id = ${row._2},",
+          fr"status = ${row._3},",
+          fr"completed = ${row._4},", // TODO probably need to format all the timestamps to use that timestamp method
+          fr"submitted = ${row._5},",
+          fr"updated = ${row._5}",
+          fr"WHERE id = ${row._1}"
+        ).combineAll.update.run
+      }
     } yield {
-      numUpdated
+      numUpdated.sum
     }
 
     transaction.transact(dbClient)
@@ -203,9 +203,9 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       for {
         statuses <- List(
           Fragment.const(
-            s"SELECT repo_id, status, path, table, submitted, completed FROM $JobsTable"
+            s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
           ),
-          fr"WHERE requestId = $rId"
+          fr"WHERE request_id = $rId"
         ).combineAll
           .query[JobSummary]
           .to[List]
@@ -226,15 +226,13 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param now current time for timestamps.
     * @return the number of jobs updated.
     */
-  def updateJobStatus(limit: Int, now: Instant): ConnectionIO[Int] = {
+  def updateJobStatus(limit: Int, now: Instant): IO[Int] = {
     // sweep jobs db for jobs that have ids
-    for {
+    val transaction = for {
       ids <- List(
-        Fragment.const(s"SELECT id FROM $JobsTable"),
-        Fragments.whereAnd(
-          fr"id IS NOT NULL",
-          fr"status = ${JobStatus.Running: JobStatus}"
-        ),
+        Fragment.const(s"SELECT jade_id FROM $JobsTable"),
+        fr"WHERE jade_id IS NOT NULL",
+        fr"AND status = ${JobStatus.Running: JobStatus}",
         fr"ORDER BY updated ASC LIMIT $limit"
       ).combineAll
         .query[UUID]
@@ -246,18 +244,19 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
       })
 
       // if status has changed, update, else remain (upsert)
-      numUpdated <- Update[JobInfo](
+      numUpdated <- statuses.traverse { row =>
         List(
           Fragment.const(s"UPDATE $JobsTable"),
-          fr"SET status = t.status, completed = t.completed, submitted = t.submitted, updated =" ++ Fragment
-            .const(timestampSql(now)),
-          fr"FROM (VALUES (?, ?, ?, ?)) AS t (id, status, completed, submitted)",
-          fr"WHERE id = t.id"
-        ).combineAll.toString
-      ).updateMany(statuses)
+          fr"SET status = ${row.jobStatus},",
+          fr"completed = ${row.completed},",
+          fr"updated = " ++ Fragment.const(timestampSql(now)),
+          fr"WHERE jade_id = ${row.id}"
+        ).combineAll.update.run
+      }
     } yield {
-      numUpdated
+      numUpdated.sum
     }
+    transaction.transact(dbClient)
   }
 
   /**
