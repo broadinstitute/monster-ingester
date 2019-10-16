@@ -25,8 +25,7 @@ import org.http4s.client._
   *
   * @see https://datarepo.terra.bio/swagger-ui.html#/ for Swagger and documentation of API.
   */
-private class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]])
-    extends JadeApi {
+class JadeApiClient(runHttp: Request[IO] => Resource[IO, Response[IO]]) extends JadeApi {
   import JadeApiClient._
 
   override def ingest(datasetId: UUID, data: IngestRequest): IO[JobInfo] = {
