@@ -1,4 +1,4 @@
-package org.broadinstitute.monster.ingester.core
+package org.broadinstitute.monster.ingester.core.models
 
 import java.util.UUID
 
