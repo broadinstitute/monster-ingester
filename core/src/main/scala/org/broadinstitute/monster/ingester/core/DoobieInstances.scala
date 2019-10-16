@@ -28,10 +28,10 @@ object DoobieInstances extends PostgresInstances with JsonInstances {
   }
 
   /**
-   * Typeclass which can write `OffsetDatetime`s to Postgres.
-   *
-   * Converts an OffsetDateTime to a Java Timestamp which Doobie knows how to handle.
-   */
+    * Typeclass which can write `OffsetDatetime`s to Postgres.
+    *
+    * Converts an OffsetDateTime to a Java Timestamp which Doobie knows how to handle.
+    */
   implicit val odtPut: Put[OffsetDateTime] = Put[Timestamp].contramap { ts =>
     Timestamp.valueOf(ts.atZoneSameInstant(ZoneOffset.UTC).toLocalDateTime)
   }

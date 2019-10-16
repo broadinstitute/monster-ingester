@@ -10,9 +10,15 @@ import doobie.implicits._
 import doobie.util.log.LogHandler
 import doobie.util.transactor.Transactor
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import org.broadinstitute.monster.ingester.core.ApiError.NotFound
 import org.broadinstitute.monster.ingester.core.IngestController.JobSubmission
-import org.broadinstitute.monster.ingester.core.models.{ApiStatus, IngestData, JobData, JobSummary, RequestSummary}
+import org.broadinstitute.monster.ingester.core.models.ApiError.NotFound
+import org.broadinstitute.monster.ingester.core.models.{
+  ApiStatus,
+  IngestData,
+  JobData,
+  JobSummary,
+  RequestSummary
+}
 import org.broadinstitute.monster.ingester.jade.JadeApiClient
 import org.broadinstitute.monster.ingester.jade.models.{IngestRequest, JobStatus}
 
@@ -211,13 +217,13 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
   def enumerateJobs(requestId: UUID): IO[List[JobSummary]] = {
     checkAndExec(requestId) { rId =>
       List(
-          Fragment.const(
-            s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
-          ),
-          fr"WHERE request_id = $rId"
-        ).combineAll
-          .query[JobSummary]
-          .to[List]
+        Fragment.const(
+          s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
+        ),
+        fr"WHERE request_id = $rId"
+      ).combineAll
+        .query[JobSummary]
+        .to[List]
     }
   }
 

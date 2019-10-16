@@ -10,7 +10,7 @@ import doobie.implicits._
 import doobie.Transactor
 import doobie.util.fragment.Fragment
 import fs2.Stream
-import org.broadinstitute.monster.ingester.core.ApiError.NotFound
+import org.broadinstitute.monster.ingester.core.models.ApiError.NotFound
 import org.broadinstitute.monster.ingester.core.models.{IngestData, JobData, JobSummary}
 import org.broadinstitute.monster.ingester.jade.JadeApiClient
 import org.broadinstitute.monster.ingester.jade.models.JobStatus
