@@ -51,13 +51,14 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @return the UUID of the request created.
     */
   def ingest(ingestData: IngestData, datasetId: UUID): IO[UUID] = {
-    for {
-      now <- getNow
+    val now = getNow.unsafeRunSync()
+    val transaction = for {
       rId <- createRequest(datasetId, now)
       _ <- initJobs(ingestData, rId)
     } yield {
       rId
     }
+    transaction.transact(dbClient)
   }
 
   def getNow: IO[Instant] =
@@ -70,7 +71,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param now the current time for timestamps.
     * @return the Id of the newly added request.
     */
-  def createRequest(datasetId: UUID, now: Instant): IO[UUID] = {
+  def createRequest(datasetId: UUID, now: Instant): ConnectionIO[UUID] = {
     // create request id
     val requestId = UUID.randomUUID()
 
@@ -82,7 +83,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     ).combineAll
 
     // return id and add to requestTable
-    updateSql.update.withUniqueGeneratedKeys[UUID]("id").transact(dbClient)
+    updateSql.update.withUniqueGeneratedKeys[UUID]("id")
   }
 
   /**
@@ -92,7 +93,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param requestId the Id of the request under which to create jobs.
     * @return the number of jobs added to the jobs table.
     */
-  def initJobs(ingestData: IngestData, requestId: UUID): IO[Int] = {
+  def initJobs(ingestData: IngestData, requestId: UUID): ConnectionIO[Int] = {
     checkAndExec(requestId) { rId =>
       // generate UUID for each subrequest in a request
       val jobs = ingestData.tables.map {
@@ -186,7 +187,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @return a RequestSummary for the given requestId.
     */
   def requestStatus(requestId: UUID): IO[RequestSummary] = {
-    checkAndExec(requestId) { rId =>
+    checkExecAndTransact(requestId) { rId =>
       for {
         submittedTime <- List(
           Fragment.const(s"SELECT submitted FROM $RequestsTable"),
@@ -215,7 +216,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @return a list of job summaries for all jobs under the request.
     */
   def enumerateJobs(requestId: UUID): IO[List[JobSummary]] = {
-    checkAndExec(requestId) { rId =>
+    checkExecAndTransact(requestId) { rId =>
       List(
         Fragment.const(
           s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
@@ -277,12 +278,26 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * Check that a request with the given ID exists, then run an operation using the ID as input.
     *
     * @param requestId Id of the request to check and use.
-    *  @return the result of whatever function
+    *  @return the result of whatever function wrapped in IO
+    */
+  private def checkExecAndTransact[Out](requestId: UUID)(
+    f: UUID => ConnectionIO[Out]
+  ): IO[Out] = {
+    val transaction = checkAndExec(requestId)(f)
+
+    transaction.transact(dbClient)
+  }
+
+  /**
+    * Check that a request with the given ID exists, then run an operation using the ID as input.
+    *
+    * @param requestId Id of the request to check and use.
+    *  @return the result of whatever function wrapped in ConnectionIO
     */
   private def checkAndExec[Out](requestId: UUID)(
     f: UUID => ConnectionIO[Out]
-  ): IO[Out] = {
-    val transaction = for {
+  ): ConnectionIO[Out] = {
+    for {
       requestRow <- List(
         Fragment.const(s"SELECT 1 FROM $RequestsTable"),
         fr"WHERE id = $requestId LIMIT 1"
@@ -297,8 +312,6 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     } yield {
       out
     }
-
-    transaction.transact(dbClient)
   }
 
   /**

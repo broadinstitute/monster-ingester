@@ -135,21 +135,11 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
   behavior of "IngestController"
 
   // createRequest
-  it should "return a UUID for valid inputs" in withController(apiEmpty) {
-    (_, controller) =>
-      for {
-        now <- getNow
-        a <- controller.createRequest(dataset1Id, now)
-      } yield {
-        a
-      }
-  }
-
   it should "insert correct data into the requests table" in withController(apiEmpty) {
     (tx, controller) =>
       for {
         now <- getNow
-        rId <- controller.createRequest(dataset1Id, now)
+        rId <- controller.createRequest(dataset1Id, now).transact(tx)
         count <- List(
           Fragment.const(s"SELECT COUNT(*) FROM $RequestsTable"),
           fr"WHERE id = $rId"
@@ -174,7 +164,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
 
   // initJobs
   it should "return the number of jobs added" in withRequest(apiEmpty) {
-    (_, controller) =>
+    (tx, controller) =>
       val myData1 = IngestData(
         List(
           JobData("mypath1", "mytable1"),
@@ -189,8 +179,8 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
         )
       )
       for {
-        count1 <- controller.initJobs(myData1, request1Id)
-        count2 <- controller.initJobs(myData2, request2Id)
+        count1 <- controller.initJobs(myData1, request1Id).transact(tx)
+        count2 <- controller.initJobs(myData2, request2Id).transact(tx)
       } yield {
         count1 shouldBe 2
         count2 shouldBe 3
@@ -206,7 +196,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
         )
       )
       for {
-        _ <- controller.initJobs(myData, request3Id)
+        _ <- controller.initJobs(myData, request3Id).transact(tx)
         real <- List(
           Fragment.const(
             s"SELECT id, request_id, status, path, table_name FROM $JobsTable"
@@ -233,7 +223,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
 
   it should "raise a NotFound error if job initialization is attempted under a nonexistent request" in withController(
     apiEmpty
-  ) { (_, controller) =>
+  ) { (tx, controller) =>
     val myData = IngestData(
       List(
         JobData("mypath1", "mytable1"),
@@ -245,6 +235,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
       .initJobs(myData, request1Id)
       .attempt
       .map(_.left.value shouldBe NotFound(request1Id))
+      .transact(tx)
   }
 
   // submitJobs
