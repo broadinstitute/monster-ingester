@@ -42,9 +42,9 @@
             <column name="table_name" type="varchar">
                 <constraints nullable="false"/>
             </column>
-            <column name="submitted" type="smalldatetime"/>
-            <column name="completed" type="smalldatetime"/>
-            <column name="updated" type="smalldatetime"/>
+            <column name="submitted" type="timestamp"/>
+            <column name="completed" type="timestamp"/>
+            <column name="updated" type="timestamp"/>
         </createTable>
 
         <createIndex tableName="jobs" indexName="jobs_status">
