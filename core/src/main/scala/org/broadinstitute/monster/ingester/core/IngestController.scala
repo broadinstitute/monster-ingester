@@ -42,8 +42,22 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
   private val logger = Slf4jLogger.getLogger[IO]
   private implicit val logHandler: LogHandler = DbLogHandler(logger)
 
-  // need a method to run all steps of an ingest; returns the request ID to check the status of?
-  def ingest(ingestRequest: IngestData, datasetId: UUID): IO[UUID] = ???
+  /**
+   * Main ingest method to run all methods to create a request entry and subsequent job entries.
+   *
+   * @param ingestData the list of paths and table names to ingest from/to.
+   * @param datasetId the dataset ID to ingest into.
+   * @return the UUID of the request created.
+   */
+  def ingest(ingestData: IngestData, datasetId: UUID): IO[UUID] = {
+    for {
+    now <- getNow
+    rId <- createRequest(datasetId, now)
+    _ <- initJobs(ingestData, rId)
+    } yield {
+      rId
+    }
+  }
 
   def getNow: IO[Instant] =
     clk.realTime(scala.concurrent.duration.MILLISECONDS).map(Instant.ofEpochMilli)
@@ -304,7 +318,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     * @param ts the possible OffsetDateTime representation of a timestamp.
     * @param field the field name of the relevant timestamp column in the database.
     * @param includeCommaAfter if it is true then the fragment will end with a comma and a space.
-    * @return a correctly formatted Fragment if Some, else an empty Fragment
+    * @return a correctly formatted Fragment if Some, else an empty Fragment.
     */
   private def handleOptionalTimestamp(
     ts: Option[OffsetDateTime],
