@@ -92,7 +92,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
             rId,
             JobStatus.Pending: JobStatus,
             prefix,
-            tableName // TODO include updated timestamp in the initialization?
+            tableName // TODO maybe include updated timestamp in the initialization?
           )
       }
       // update table
@@ -146,13 +146,22 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
 
       // update the JobsTable; update the requests that have moved from pending to running
       numUpdated <- statuses.traverse { row =>
+        val completedFragment =
+          handleOptionalTimestamp(row._4, "completed", includeCommaBefore = true)
+        val submittedFragment = handleOptionalTimestamp(
+          row._5,
+          "submitted",
+          includeCommaBefore = true,
+          includeCommaAfter = true
+        )
+        val updatedFragment = handleOptionalTimestamp(row._5, "updated")
         List(
           Fragment.const(s"UPDATE $JobsTable"),
           fr"SET jade_id = ${row._2},",
-          fr"status = ${row._3},",
-          fr"completed = ${row._4},", // TODO probably need to format all the timestamps to use that timestamp method
-          fr"submitted = ${row._5},",
-          fr"updated = ${row._5}",
+          fr"status = ${row._3}",
+          completedFragment,
+          submittedFragment,
+          updatedFragment,
           fr"WHERE id = ${row._1}"
         ).combineAll.update.run
       }
@@ -245,10 +254,12 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
 
       // if status has changed, update, else remain (upsert)
       numUpdated <- statuses.traverse { row =>
+        val completedFragment =
+          handleOptionalTimestamp(row.completed, "completed", includeCommaAfter = true)
         List(
           Fragment.const(s"UPDATE $JobsTable"),
           fr"SET status = ${row.jobStatus},",
-          fr"completed = ${row.completed},",
+          completedFragment,
           fr"updated = " ++ Fragment.const(timestampSql(now)),
           fr"WHERE jade_id = ${row.id}"
         ).combineAll.update.run
@@ -285,6 +296,31 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     }
 
     transaction.transact(dbClient)
+  }
+
+  /**
+    * Create a Fragment correctly for a given timestamp and field name.
+    *
+    * @param ts the possible OffsetDateTime representation of a timestamp.
+    * @param field the field name of the relevant timestamp column in the database.
+    * @param includeCommaAfter if it is true then the fragment will end with a comma and a space.
+    * @return a correctly formatted Fragment if Some, else an empty Fragment
+    */
+  private def handleOptionalTimestamp(
+    ts: Option[OffsetDateTime],
+    field: String,
+    includeCommaBefore: Boolean = false,
+    includeCommaAfter: Boolean = false
+  ): Fragment = {
+    val beforeComma = if (includeCommaBefore) fr", " else fr""
+    val afterComma = if (includeCommaAfter) fr", " else fr""
+    ts match {
+      case Some(ts) =>
+        beforeComma ++ Fragment.const(s"$field = ") ++ Fragment.const(
+          timestampSql(ts.toInstant)
+        ) ++ afterComma
+      case None => fr""
+    }
   }
 }
 

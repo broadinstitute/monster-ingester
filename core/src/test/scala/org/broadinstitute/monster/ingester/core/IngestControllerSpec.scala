@@ -1,6 +1,5 @@
 package org.broadinstitute.monster.ingester.core
 
-import java.sql.Timestamp
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, OffsetDateTime}
 import java.util.UUID
@@ -68,8 +67,12 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
       val setup = for {
         _ <- List(request1Id, request2Id, request3Id).zipWithIndex.traverse_ {
           case (id, i) =>
-            val ts = Timestamp.from(Instant.ofEpochMilli(nowMillis + i))
-            sql"INSERT INTO requests (id, submitted, dataset_id) VALUES ($id, $ts, $dataset1Id)".update.run.void
+            val ts = timestampSql(Instant.ofEpochMilli(nowMillis + i))
+            List(
+              fr"INSERT INTO requests (id, submitted, dataset_id) VALUES ($id, ",
+              Fragment.const(ts),
+              fr", $dataset1Id)"
+            ).combineAll.update.run.void
         }
         _ <- request1Jobs.traverse_ {
           case (path, table) =>
