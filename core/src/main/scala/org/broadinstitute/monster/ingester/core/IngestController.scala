@@ -43,17 +43,17 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
   private implicit val logHandler: LogHandler = DbLogHandler(logger)
 
   /**
-   * Main ingest method to run all methods to create a request entry and subsequent job entries.
-   *
-   * @param ingestData the list of paths and table names to ingest from/to.
-   * @param datasetId the dataset ID to ingest into.
-   * @return the UUID of the request created.
-   */
+    * Main ingest method to run all methods to create a request entry and subsequent job entries.
+    *
+    * @param ingestData the list of paths and table names to ingest from/to.
+    * @param datasetId the dataset ID to ingest into.
+    * @return the UUID of the request created.
+    */
   def ingest(ingestData: IngestData, datasetId: UUID): IO[UUID] = {
     for {
-    now <- getNow
-    rId <- createRequest(datasetId, now)
-    _ <- initJobs(ingestData, rId)
+      now <- getNow
+      rId <- createRequest(datasetId, now)
+      _ <- initJobs(ingestData, rId)
     } yield {
       rId
     }
@@ -81,13 +81,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     ).combineAll
 
     // return id and add to requestTable
-    val transaction = for {
-      requestId <- updateSql.update.withUniqueGeneratedKeys[UUID]("id")
-    } yield {
-      requestId
-    }
-
-    transaction.transact(dbClient)
+    updateSql.update.withUniqueGeneratedKeys[UUID]("id").transact(dbClient)
   }
 
   /**
@@ -110,11 +104,9 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
           )
       }
       // update table
-      for {
-        jobsAdded <- Update[(UUID, JobStatus, String, String)](
-          s"INSERT INTO $JobsTable (request_id, status, path, table_name) VALUES (?, ?, ?, ?)"
-        ).updateMany(jobs)
-      } yield (jobsAdded)
+      Update[(UUID, JobStatus, String, String)](
+        s"INSERT INTO $JobsTable (request_id, status, path, table_name) VALUES (?, ?, ?, ?)"
+      ).updateMany(jobs)
     }
   }
 
@@ -209,7 +201,7 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
           .query[(Long, JobStatus)]
           .to[List]
       } yield {
-        models.RequestSummary(submittedTime, counts)
+        RequestSummary(submittedTime, counts)
       }
     }
   }
@@ -223,16 +215,14 @@ class IngestController(dbClient: Transactor[IO], jadeClient: JadeApiClient)(
     */
   def enumerateJobs(requestId: UUID): IO[List[JobSummary]] = {
     checkAndExec(requestId) { rId =>
-      for {
-        statuses <- List(
-          Fragment.const(
-            s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
-          ),
-          fr"WHERE request_id = $rId"
-        ).combineAll
-          .query[JobSummary]
-          .to[List]
-      } yield (statuses)
+      List(
+        Fragment.const(
+          s"SELECT jade_id, status, path, table_name, submitted, completed FROM $JobsTable"
+        ),
+        fr"WHERE request_id = $rId"
+      ).combineAll
+        .query[JobSummary]
+        .to[List]
     }
   }
 
