@@ -26,6 +26,7 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
   import Constants._
 
   val nowMillis = 1234L
+
   private implicit val clk: Clock[IO] = new Clock[IO] {
     override def realTime(unit: TimeUnit): IO[Long] = IO.pure(nowMillis)
     override def monotonic(unit: TimeUnit): IO[Long] = IO.pure(nowMillis)
@@ -34,11 +35,13 @@ class IngestControllerSpec extends PostgresSpec with MockFactory with EitherValu
   private val dataset1Id = UUID.randomUUID()
 
   private val request1Id = UUID.randomUUID()
+
   private val request1Jobs = List.tabulate(10) { i =>
     s"path$i" -> s"table$i"
   }
 
   private val request2Id = UUID.randomUUID()
+
   private val request2Jobs = List.tabulate(3) { i =>
     (
       s"path$i",

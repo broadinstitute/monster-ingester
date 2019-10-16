@@ -25,6 +25,7 @@ object JobStatus
 
   implicit val statusEncoder: KeyEncoder[JobStatus] =
     KeyEncoder.encodeKeyString.contramap(_.entryName)
+
   implicit val statusDecoder: KeyDecoder[JobStatus] =
     namesToValuesMap.get
 

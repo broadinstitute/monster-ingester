@@ -1,50 +1,36 @@
-// Compiler plugins.
-val gcsLibVersion = "0.1.0"
-
 // Data types & control flow.
-val catsVersion = "1.6.0"
-val catsEffectVersion = "1.2.0"
 val enumeratumVersion = "1.5.13"
-val fs2Version = "1.0.5"
 
 // DB.
-val doobieVersion = "0.7.0"
+val doobieVersion = "0.8.4"
 val postgresqlDriverVersion = "42.2.5"
 
 // JSON.
-val circeVersion = "0.11.1"
-val circeDerivationVersion = "0.11.0-M3"
-val enumeratumCirceVersion = "1.5.21"
+val circeVersion = "0.12.2"
+val circeDerivationVersion = "0.12.0-M7"
+val enumeratumCirceVersion = "1.5.22"
 
 // Logging.
 val logbackVersion = "1.2.3"
-val log4CatsVersion = "0.3.0"
+val log4CatsVersion = "1.0.0"
 
 // Web.
-val http4sVersion = "0.20.10"
+val http4sVersion = "0.21.0-M5"
 val sshJVersion = "0.27.0"
 
 // Storage libraries.
+val gcsLibVersion = "0.5.0"
 val commonsNetVersion = "3.6"
-val googleAuthVersion = "0.17.1"
+val googleAuthVersion = "0.18.0"
 
 // Testing.
 val googleCloudJavaVersion = "1.90.0"
 val scalaMockVersion = "4.4.0"
 val scalaTestVersion = "3.0.8"
 val vaultDriverVersion = "5.0.0"
-val liquibaseVersion = "3.7.0"
-val testcontainersVersion = "1.12.0"
-val testcontainersScalaVersion = "0.29.0"
-
-// Settings to apply to all sub-projects.
-// Can't be applied at the build level because of scoping rules.
-val commonSettings = Seq(
-  resolvers ++= Seq(
-    "Broad Artifactory Releases" at "https://broadinstitute.jfrog.io/broadinstitute/libs-release/",
-    "Broad Artifactory Snapshots" at "https://broadinstitute.jfrog.io/broadinstitute/libs-snapshot/"
-  ),
-)
+val liquibaseVersion = "3.8.0"
+val testcontainersVersion = "1.12.2"
+val testcontainersScalaVersion = "0.33.0"
 
 lazy val `monster-ingester` = project
   .in(file("."))
@@ -53,7 +39,6 @@ lazy val `monster-ingester` = project
 lazy val `jade-client` = project
   .in(file("jade-client"))
   .enablePlugins(BasePlugin)
-  .settings(commonSettings)
   .settings(
     libraryDependencies ++= Seq(
       "com.beachape" %% "enumeratum" % enumeratumVersion,
@@ -79,8 +64,7 @@ lazy val `jade-client` = project
 lazy val `core` = project
   .in(file("core"))
   .enablePlugins(BasePlugin)
-  .dependsOn(`jade-client`, `core-migrations`)
-  .settings(commonSettings)
+  .dependsOn(`jade-client`, `core-migrations` % Test)
   .settings(
     libraryDependencies ++= Seq(
       "io.chrisdavenport" %% "log4cats-slf4j" % log4CatsVersion,
@@ -112,4 +96,3 @@ lazy val `core` = project
 
 lazy val `core-migrations` = project
   .in(file("./core/db-migrations"))
-  .settings(commonSettings)

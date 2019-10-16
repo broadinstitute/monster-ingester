@@ -13,6 +13,7 @@ import org.broadinstitute.monster.ingester.jade.models.{
 }
 import org.broadinstitute.monster.storage.gcs.GcsAuthProvider
 import org.http4s._
+import org.http4s.implicits._
 import org.http4s.circe.CirceEntityDecoder._
 import org.http4s.circe.CirceEntityEncoder._
 import org.http4s.client._
