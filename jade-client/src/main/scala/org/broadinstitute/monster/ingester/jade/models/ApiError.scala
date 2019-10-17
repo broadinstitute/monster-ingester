@@ -16,6 +16,7 @@ object ApiError {
     */
   case class JadeError(status: Int, body: Either[String, ApiErrorBody])
       extends Exception {
+
     override def getMessage: String = {
       val theBody =
         body.fold(identity, _.asJson.spaces2)
@@ -26,6 +27,7 @@ object ApiError {
   implicit val d: Decoder[Either[String, ApiErrorBody]] =
     Decoder[String].either(Decoder[ApiErrorBody])
   implicit val decoder: Decoder[JadeError] = deriveDecoder
+
   implicit val e: Encoder[Either[String, ApiErrorBody]] = either =>
     either.fold(_.asJson, _.asJson)
   implicit val encoder: Encoder[JadeError] = deriveEncoder

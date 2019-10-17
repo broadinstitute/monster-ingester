@@ -23,10 +23,10 @@ case class JobInfo(
 )
 
 object JobInfo {
-  implicit val decoder: Decoder[JobInfo] = deriveDecoder(
-    io.circe.derivation.renaming.snakeCase
-  )
-  implicit val encoder: Encoder[JobInfo] = deriveEncoder(
-    io.circe.derivation.renaming.snakeCase
-  )
+
+  implicit val decoder: Decoder[JobInfo] =
+    deriveDecoder(io.circe.derivation.renaming.snakeCase, true, None)
+
+  implicit val encoder: Encoder[JobInfo] =
+    deriveEncoder(io.circe.derivation.renaming.snakeCase, None)
 }
